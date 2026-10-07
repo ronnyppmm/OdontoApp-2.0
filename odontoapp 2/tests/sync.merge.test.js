@@ -1,0 +1,55 @@
+// Reglas de fusión de tres vías (sin base de datos): qué pasa cuando dos dispositivos editan lo mismo.
+require('fake-indexeddb/auto');
+const http = require('http'), fs = require('fs'), path = require('path');
+const { JSDOM, VirtualConsole } = require('jsdom');
+const ROOT = path.resolve(__dirname, '..');
+const srv = http.createServer((q, r) => { const f = path.join(ROOT, q.url.split('?')[0] === '/' ? 'index.html' : decodeURIComponent(q.url.split('?')[0])); fs.readFile(f, (e, d) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, { 'Content-Type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' }[path.extname(f)] || 'text/plain' }); r.end(d); }); });
+const results = []; const check = (n, ok, extra = '') => { results.push(ok); console.log((ok ? '  ✔ ' : '  ✘ ') + n + (ok ? '' : '  ' + String(extra).slice(0, 250))); };
+srv.listen(0, async () => {
+  console.log('\nOdontoApp — fusión de cambios (tres vías)');
+  const errs = []; const vc = new VirtualConsole(); vc.on('jsdomError', e => { if (!/supabase|jsdelivr|googleapis|gstatic|Not implemented|serviceWorker/i.test(e.message)) errs.push(e.message.slice(0, 160)); });
+  const dom = await JSDOM.fromURL('http://localhost:' + srv.address().port + '/', { runScripts: 'dangerously', resources: 'usable', pretendToBeVisual: true, virtualConsole: vc, beforeParse(w) { w.indexedDB = indexedDB; w.IDBKeyRange = IDBKeyRange; w.scrollTo = () => {}; w.alert = () => {}; w.confirm = () => true; } });
+  await new Promise(r => setTimeout(r, 1800)); const S = dom.window.SyncEngine;
+  const M = (b, l, r, noBase = false) => { const x = S.mergeRecord('patient', b, l, r, noBase); return { d: JSON.parse(JSON.stringify(x.data)), c: x.conflicts.length, raw: x }; };
+  const jo = o => JSON.stringify(o);
+
+  let m = M({ name: 'A', phone: '1' }, { name: 'A', phone: '2' }, { name: 'B', phone: '1' });
+  check('campos distintos: se conservan ambos cambios, sin conflicto', m.d.name === 'B' && m.d.phone === '2' && m.c === 0, jo(m));
+  m = M({ name: 'A' }, { name: 'L' }, { name: 'R' });
+  check('mismo campo: gana lo local y lo descartado queda anotado', m.d.name === 'L' && m.c === 1 && m.raw.conflicts[0].lost === 'R');
+  m = M(undefined, { name: 'L', x: 1 }, { name: 'R', y: 2 }, true);
+  check('sin versión previa (primera conexión): gana la nube, pero se une lo que solo existe de un lado', m.d.name === 'R' && m.d.x === 1 && m.d.y === 2 && m.c === 1, jo(m.d));
+  m = M({ a: 1 }, { a: 1, nuevo: 'L' }, { a: 1, otro: 'R' });
+  check('campos nuevos de cada lado se suman', m.d.nuevo === 'L' && m.d.otro === 'R' && m.c === 0);
+  m = M({ a: 1, b: 2 }, { a: 1 }, { a: 1, b: 2 });
+  check('un campo que borré yo (y el otro no tocó) se queda borrado', !('b' in m.d) && m.c === 0, jo(m.d));
+  m = M({ a: 1, b: 2 }, { a: 1, b: 2 }, { a: 1 });
+  check('un campo que borró el otro (y yo no toqué) se borra también', !('b' in m.d) && m.c === 0);
+  m = M({ s: { 11: 'a' } }, { s: { 11: 'a', 12: 'b' } }, { s: { 11: 'a', 13: 'c' } });
+  check('objetos anidados (odontograma): se fusiona diente por diente', jo(m.d.s) === jo({ 11: 'a', 12: 'b', 13: 'c' }), jo(m.d));
+
+  const el = (id, x) => ({ id, x });
+  m = M({ l: [el(1, 'a')] }, { l: [el(1, 'a'), el(2, 'L')] }, { l: [el(1, 'a'), el(3, 'R')] });
+  check('listas por id: lo agregado en cada dispositivo se conserva', m.d.l.map(e => e.id).sort().join() === '1,2,3' && m.c === 0, jo(m.d));
+  m = M({ l: [el(1, 'a'), el(2, 'b')] }, { l: [el(1, 'a')] }, { l: [el(1, 'a'), el(2, 'b')] });
+  check('lista: lo que borré yo y el otro no tocó, se borra', m.d.l.map(e => e.id).join() === '1');
+  m = M({ l: [el(1, 'a'), el(2, 'b')] }, { l: [el(1, 'a'), el(2, 'b')] }, { l: [el(1, 'a')] });
+  check('lista: lo que borró el otro y yo no toqué, se borra', m.d.l.map(e => e.id).join() === '1');
+  m = M({ l: [el(1, 'a'), el(2, 'b')] }, { l: [el(1, 'a')] }, { l: [el(1, 'a'), el(2, 'EDITADO')] });
+  check('lista: lo borré yo pero el otro lo editó → gana la edición (no se pierde trabajo)', m.d.l.length === 2 && m.d.l[1].x === 'EDITADO' && m.c === 1);
+  m = M({ l: [el(1, 'a'), el(2, 'b')] }, { l: [el(1, 'a'), el(2, 'EDITADO')] }, { l: [el(1, 'a')] });
+  check('lista: lo borró el otro pero yo lo edité → gana mi edición', m.d.l.length === 2 && m.d.l[1].x === 'EDITADO' && m.c === 1);
+  m = M({ l: [el(1, 'a')] }, { l: [el(1, 'L')] }, { l: [el(1, 'R')] });
+  check('lista: mismo elemento editado en ambos → gana lo local, conflicto anotado', m.d.l[0].x === 'L' && m.c === 1);
+  m = M({ t: ['x'] }, { t: ['x', 'L'] }, { t: ['x', 'R'] });
+  check('listas sin id (textos): se tratan como un valor y gana lo local', jo(m.d.t) === jo(['x', 'L']) && m.c === 1);
+  const cfg = S.mergeRecord('config', { counters: { nextRecetaId: 5 } }, { counters: { nextRecetaId: 9 } }, { counters: { nextRecetaId: 7, nextId: 3 } });
+  check('contadores: nunca retroceden (queda el mayor) y no cuentan como conflicto', cfg.data.counters.nextRecetaId === 9 && cfg.data.counters.nextId === 3 && cfg.conflicts.length === 0, jo(cfg));
+  check('huella estable: el orden de las claves no cambia la huella', S.hashOf('patient', { a: 1, b: { c: 2, d: 3 } }) === S.hashOf('patient', { b: { d: 3, c: 2 }, a: 1 }));
+  check('huella: cualquier cambio de contenido la cambia', S.hashOf('pay', { a: 1 }) !== S.hashOf('pay', { a: 2 }));
+  check('imagen: la huella detecta cambios aunque no relea toda la miniatura', S.hashOf('img', { id: 1, data: 'AAAA' + 'x'.repeat(500) + 'ZZZZ' }) !== S.hashOf('img', { id: 1, data: 'BBBB' + 'x'.repeat(500) + 'ZZZZ' }));
+  check('sin errores de JavaScript', errs.length === 0, errs.join(' | '));
+  dom.window.close(); srv.close();
+  const fail = results.filter(x => !x).length;
+  console.log(fail ? `\n✘ ${fail} prueba(s) fallaron` : '\n✔ Todas las pruebas de fusión pasaron'); process.exit(fail ? 1 : 0);
+});
