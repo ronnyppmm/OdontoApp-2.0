@@ -1,0 +1,56 @@
+// Arquitectura: el estado de pacientes es PRIVADO de Patients, ya no hay alias globales, todo archivo está precacheado y sin handlers inline.
+require('fake-indexeddb/auto');
+const http = require('http'), fs = require('fs'), path = require('path');
+const { JSDOM, VirtualConsole } = require('jsdom');
+const ROOT = path.resolve(__dirname, '..');
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
+const srv = http.createServer((q, r) => { const f = path.join(ROOT, q.url.split('?')[0] === '/' ? 'index.html' : decodeURIComponent(q.url.split('?')[0])); fs.readFile(f, (e, d) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'text/plain' }); r.end(d); }); });
+const wait = ms => new Promise(r => setTimeout(r, ms));
+const results = []; const check = (n, ok, extra = '') => { results.push(ok); console.log((ok ? '  ✔ ' : '  ✘ ') + n + (ok ? '' : '  ' + String(extra).slice(0, 400))); };
+const ALIAS = ["abrirCorreoBackup", "abrirOdoSnapshot", "abrirResetMes", "addConsent", "addConsentCustom", "addDiagItem", "addMedItem", "addPresupItem", "addPresupItemFromSvc", "applyColor", "applyLogoImg", "aprobarPresupuesto", "buscarCIE10", "cerrarMes", "cie10Cargar", "cie10Init", "clearTooth", "closeTP", "confirmDeletePt", "confirmarAprobacion", "confirmarFirma", "copiarSqlSync", "crearBackupHistorico", "delConsent", "delEgreso", "delPay", "delReceta", "descargarArchivoMes", "descargarBackupLocal", "descargarInformeAnual", "descargarInformeMensual", "diagCieInput", "diagDescInput", "editPt", "eliminarArchivoMes", "eliminarPresupuesto", "enviarRecallWA", "escHtml", "exportarDatos", "filterPts", "firmarConsent", "getDefaultWAMsg", "hideResults", "importarDatos", "imprimirComprobante", "imprimirOdoSnapshot", "imprimirPresupuesto", "imprimirReceta", "jsq", "loadCIE10Full", "marcarContactado", "marcarFacturada", "mostrarHistorialRespaldos", "noContactarRecall", "notifyOdo", "numToLetras", "openAddAppt", "openAddEgreso", "openAddPay", "openDeletePt", "openLogoEdit", "openNewPt", "openNuevaReceta", "openNuevoPresupuesto", "openSbPanel", "openSbSetup", "openSelectConsent", "parseCSV_CIE10", "posponerRecall", "prepararEmailBackup", "reactivarRecall", "recalcPresup", "rechazarPresupuesto", "recordatorioFactura", "removeDiagItem", "renderAgendaPage", "renderCitas", "renderConsentimientos", "renderDashboard", "renderDatos", "renderDiario", "renderEstadisticas", "renderImagenes", "renderOdontograma", "renderPagos", "renderPresupuestos", "renderRecetas", "renderSidebar", "renderTab", "renderTratamientos", "restaurarDesdeHistorial", "runSearch", "saveConsentCustom", "saveEditPt", "saveEgreso", "saveNewPt", "savePay", "savePresupuesto", "saveReceta", "sbAction", "sbConectar", "sbDesconectar", "sbLoadNow", "sbSyncManual", "searchGo", "searchKeyNav", "seleccionarServicioPay", "selectDiag", "selectPt", "setRecallCfg", "setRecallTab", "showDiagResults", "showResults", "switchTab", "syncConfirmarBorrado", "syncRecuperarDeNube", "toggleDarkMode", "verArchivoMes", "verConsent", "verPresupuesto", "verReceta"];
+const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
+/* código sin comentarios de bloque ni de línea completa */
+const code = f => { let inb = false; return read(f).split('\n').filter(l => { const t = l.trim(); if (inb) { if (t.includes('*/')) inb = false; return false; } if (t.startsWith('/*') && !t.includes('*/')) { inb = true; return false; } return !(t.startsWith('//') || t.startsWith('/*') || t.startsWith('*')); }).join('\n'); };
+srv.listen(0, async () => {
+  console.log('\nOdontoApp — arquitectura (estado privado, sin alias globales, archivos precacheados)');
+  const jsFiles = fs.readdirSync(path.join(ROOT, 'js')).filter(f => f.endsWith('.js'));
+  // 1. estado privado
+  const offenders = [];
+  jsFiles.filter(f => f !== 'patients.js').forEach(f => code('js/' + f).split('\n').forEach((l, i) => {
+    const m = l.match(/(?<![.\w$'"-])(patients|curPt)\b(?![\w'"]|\s*:)/); if (m) offenders.push(f + ':' + (i + 1) + ' ' + l.trim().slice(0, 80));
+  }));
+  check('NINGÚN módulo (salvo patients.js) toca las variables patients / curPt: todo pasa por Patients.all/current/setAll/setCurrent', offenders.length === 0, offenders.slice(0, 5).join(' | '));
+  // 2. sin mapas de alias
+  const maps = jsFiles.filter(f => /var L=\{|Object\.keys\(L\)|window\[name\]/.test(code('js/' + f)));
+  check('ya no hay mapas de alias (var L={…}, window[name]) en ningún módulo', maps.length === 0, maps.join());
+  // 3. handlers inline
+  const inl = jsFiles.concat(['index.html']).filter(f => /\son(click|input|change|keydown|keyup|mouseover|mouseout|mouseenter|mouseleave|focus|blur|submit|load|error)\s*=/i.test((f.endsWith('.js') ? code('js/' + f) : read(f)).replace(/window\.onload=function\(\)\{window\.print\(\)\}/g, '')));
+  check('ningún archivo del proyecto tiene handlers inline (onclick, onchange…)', inl.length === 0, inl.join());
+  // 4. sw.js
+  const sw = read('sw.js'), base = (sw.match(/const BASE=\[([^\]]*)\]/) || [, ''])[1].split(',').map(s => s.trim().replace(/['"]/g, '')).filter(Boolean);
+  const idx = read('index.html'), tags = [...idx.matchAll(/<script src="(js\/[^"]+)"/g)].map(m => './' + m[1]);
+  check('sw.js precachea TODOS los scripts de index.html (si falta uno, la app no abre sin internet)', tags.length >= 14 && tags.every(t => base.includes(t)), tags.filter(t => !base.includes(t)).join());
+  check('…y todo lo que precachea existe en disco', base.every(b => b === './' || fs.existsSync(path.join(ROOT, b.replace(/^\.\//, '')))), base.filter(b => b !== './' && !fs.existsSync(path.join(ROOT, b.replace(/^\.\//, '')))).join());
+  check('el orden de scripts en index.html es core → app → … → main', tags[0] === './js/core.js' && tags[1] === './js/app.js' && tags[tags.length - 1] === './js/main.js', tags.join());
+  // 5. en el navegador
+  const errs = [];
+  const vc = new VirtualConsole(); vc.on('jsdomError', e => { if (!/supabase|jsdelivr|googleapis|gstatic|Not implemented|serviceWorker/i.test(e.message)) errs.push(e.message.slice(0, 200)); });
+  const dom = await JSDOM.fromURL(`http://localhost:${srv.address().port}/index.html`, { runScripts: 'dangerously', resources: 'usable', pretendToBeVisual: true, virtualConsole: vc, beforeParse(w) { w.indexedDB = indexedDB; w.IDBKeyRange = IDBKeyRange; w.scrollTo = () => {}; w.alert = () => {}; w.confirm = () => true; } });
+  const w = dom.window, E = s => w.eval(s); await wait(2200);
+  check('las variables patients y curPt NO existen como globales', E('typeof patients') === 'undefined' && E('typeof curPt') === 'undefined' && !('patients' in w) && !('curPt' in w));
+  const left = ALIAS.filter(n => E(`typeof ${n}`) !== 'undefined');
+  check('ninguno de los ' + ALIAS.length + ' alias antiguos existe ya como global', left.length === 0, left.join());
+  check('lo que SÍ queda global es el armazón: showPage, openModal, closeModal, renderConfiguracion, save, esc…', ['showPage', 'openModal', 'closeModal', 'renderConfiguracion', 'save', 'esc', 'uid', 'today'].every(n => E(`typeof ${n}`) === 'function'));
+  // 6. API de estado
+  E("Patients.setAll([{id:1,name:'A'},{id:2,name:'B'}])");
+  check('setAll reemplaza la lista y all() la devuelve', E('Patients.all().length') === 2 && E('Patients.all()[1].name') === 'B');
+  E("Patients.setCurrent(Patients.all()[0])"); check('setCurrent / current', E('Patients.current().name') === 'A');
+  E("Patients.setAll([{id:9,name:'Otro'}])"); check('si el paciente abierto ya no está en la lista nueva, se cierra (no queda un fantasma)', E('Patients.current()') === null);
+  E("Patients.setAll('basura')"); check('setAll con algo que no es lista deja una lista vacía (no rompe)', Array.isArray(E('Patients.all()')) && E('Patients.all().length') === 0);
+  E("Patients.setCurrent(undefined)"); check('setCurrent(undefined) equivale a «ninguno»', E('Patients.current()') === null);
+  E("Patients.setAll([{id:5,name:'Z',treatments:[],payments:[],appointments:[],diary:[],images:[],consents:[],recetas:[],presupuestos:[],odoHistory:[],surfData:{},wholeData:{}}]); Patients.select(5)");
+  check('seleccionar un paciente lo deja abierto y la ficha se dibuja', E('Patients.current().id') === 5 && /Z/.test(w.document.getElementById('mainContent').textContent));
+  check('sin errores de JavaScript', errs.length === 0, errs.join(' | '));
+  const bad = results.filter(x => !x).length; console.log(bad ? `\n✘ ${bad} comprobación(es) fallaron` : `\n✔ Todas las pruebas de arquitectura pasaron (${results.length} comprobaciones)`);
+  w.close(); srv.close(); process.exit(bad ? 1 : 0);
+});
