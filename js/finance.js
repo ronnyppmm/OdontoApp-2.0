@@ -5,6 +5,15 @@
    • El HTML no lleva onclick: usa data-action (ver app.js). Ya no existen alias globales: se llama siempre a Finance.* (Finance.savePay, Finance.closeMonthUI…). */
 const Finance=(function(){
   'use strict';
+  /* ── ESTADO PRIVADO: egresos, facturas y resúmenes mensuales archivados. Se leen con expenses()/invoices()/archives() (la misma lista) y se reemplazan con setX(lista). ── */
+  var egresos=[],facturas=[],archivosContables=[];
+  function lista(l){return Array.isArray(l)?l:[];}
+  function expenses(){return egresos;}
+  function invoices(){return facturas;}
+  function archives(){return archivosContables;}
+  function setExpenses(l){egresos=lista(l);return egresos;}
+  function setInvoices(l){facturas=lista(l);return facturas;}
+  function setArchives(l){archivosContables=lista(l);return archivosContables;}
   var TYPES=['Efectivo','Transferencia','Tarjeta de crédito','Tarjeta de débito','Cheque'];
   var CATS=['Materiales','Arriendo','Servicios','Sueldos','Equipos','Marketing','Impuestos','Otro'];
   var MIN_YEAR=1990,MAX_YEAR=2100;
@@ -275,8 +284,8 @@ const Finance=(function(){
   }
   function openAddPay(){
     if(!Patients.current())return;
-    var chips=servicios.length?'<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">⚡ Seleccionar del catálogo</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+
-      servicios.map(function(s){return '<button class="svc-chip" data-action="finance.pickService" data-nombre="'+esc(s.nombre)+'" data-precio="'+esc(s.precio)+'">'+esc(s.nombre)+' <span style="font-weight:700;color:var(--green)">'+money(s.precio)+'</span></button>';}).join('')+
+    var chips=Services.list().length?'<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">⚡ Seleccionar del catálogo</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+
+      Services.list().map(function(s){return '<button class="svc-chip" data-action="finance.pickService" data-nombre="'+esc(s.nombre)+'" data-precio="'+esc(s.precio)+'">'+esc(s.nombre)+' <span style="font-weight:700;color:var(--green)">'+money(s.precio)+'</span></button>';}).join('')+
       '</div><div style="border-top:1px solid var(--border);margin:12px 0 10px"></div></div>':'';
     openModal('<div class="modal-title">Registrar pago</div>'+chips+
       '<div class="form-row form-full"><div class="form-group"><label>Concepto</label><input id="f_pyc" placeholder="Abono, pago total, nombre del servicio..."></div></div>'+
@@ -576,7 +585,7 @@ const Finance=(function(){
     downloadHtml('Informe_Anual_'+anio+'_'+safeName(document.getElementById('logoText').textContent)+'.html',_annualReportHtml(anio));
   }
 
-  var api={TYPES:TYPES,CATS:CATS,fm:fm,sumM:sumM,ym:ym,validDate:validDate,closedMonth:closedMonth,findPayment:findPayment,
+  var api={expenses:expenses,invoices:invoices,archives:archives,setExpenses:setExpenses,setInvoices:setInvoices,setArchives:setArchives,TYPES:TYPES,CATS:CATS,fm:fm,sumM:sumM,ym:ym,validDate:validDate,closedMonth:closedMonth,findPayment:findPayment,
     monthData:monthData,yearLive:yearLive,dataIssues:dataIssues,checkPayment:checkPayment,checkExpense:checkExpense,warningsFor:warningsFor,
     addPayment:addPayment,removePayment:removePayment,markInvoiced:markInvoiced,addExpense:addExpense,removeExpense:removeExpense,
     closeMonth:closeMonth,reopenMonth:reopenMonth,archivedCount:archivedCount,

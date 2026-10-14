@@ -90,20 +90,33 @@ function flushAudit(){
 }
 window.addEventListener('beforeunload',()=>{try{flushAudit();}catch(e){}});
 const EV_PACIENTE=new Set(["Abrió ficha", "Aprobó presupuesto", "Completó cita", "Creó cita", "Creó consentimiento", "Creó consentimiento personalizado", "Creó nota del diario clínico", "Creó paciente", "Creó paciente desde una cita rápida", "Creó presupuesto", "Editó datos de una imagen", "Editó datos del paciente", "Editó nota del diario clínico", "Eliminó cita", "Eliminó consentimiento", "Eliminó imagen", "Eliminó nota del diario", "Eliminó paciente", "Eliminó pago", "Eliminó presupuesto", "Eliminó receta", "Eliminó registro de odontograma", "Eliminó tratamiento", "Emitió receta", "Envió recordatorio de cobro por WhatsApp", "Envió recordatorio de control por WhatsApp", "Guardó registro de odontograma", "Imprimió comprobante", "Imprimió consentimiento", "Imprimió odontograma", "Imprimió presupuesto", "Imprimió receta", "Marcó cita como «no asistió»", "Marcó paciente como \"no contactar\"", "Marcó paciente como contactado", "Marcó pago como facturado", "Marcó tratamiento como realizado", "Pospuso recordatorio de paciente", "Reactivó recordatorios del paciente", "Rechazó presupuesto", "Registró firma de consentimiento", "Registró pago", "Registró tratamiento", "Subió imágenes"]);   // eventos cuyo detalle (en versiones anteriores) llevaba el NOMBRE del paciente
-/* Versiones anteriores guardaban el nombre del paciente en el registro. Una sola vez: se cambia por el N.° de ficha (o se quita si ya no se puede identificar). */
+/* Limpieza del registro, una sola vez cada paso:
+   1) versiones anteriores guardaban el NOMBRE del paciente → se cambia por su N.° de ficha (o se quita si ya no se puede identificar);
+   2) las v20–v21 anotaban el id interno (muy largo) como ficha → se cambia por el N.° de ficha corto. */
 async function limpiarNombres(){
-  if(localStorage.getItem('oa3_audit_fichas')==='1')return 0;
+  const f1=localStorage.getItem('oa3_audit_fichas')==='1',f2=localStorage.getItem('oa3_audit_fichas2')==='1';
+  if(f1&&f2)return 0;
   const cur=(await idbGet('audit'))||[];let n=0;
-  const porNombre={};try{Patients.all().forEach(p=>{const k=String(p&&p.name||'').trim().toLowerCase();if(!k)return;porNombre[k]=porNombre[k]===undefined?p.id:null;});}catch(e){}   // null = nombre repetido: no se adivina
+  const porNombre={};try{Patients.all().forEach(p=>{const k=String(p&&p.name||'').trim().toLowerCase();if(!k)return;porNombre[k]=porNombre[k]===undefined?p:null;});}catch(e){}   // null = nombre repetido: no se adivina
   const out=cur.map(x=>{
-    if(!x||!EV_PACIENTE.has(x.ev)||!x.det||/^Ficha N° /.test(x.det))return x;
-    const m=/^(.*?)( · id .+)?$/.exec(String(x.det)),nom=m[1].trim().toLowerCase(),resto=m[2]||'';
-    if(/^#?\d+$/.test(m[1].trim())){n++;return Object.assign({},x,{det:'Ficha N° '+m[1].trim().replace('#','')+resto});}
-    n++;const id=porNombre[nom];
-    return Object.assign({},x,{det:(id!=null?'Ficha N° '+id:'(paciente no identificado)')+resto});
+    if(!x||!EV_PACIENTE.has(x.ev)||!x.det)return x;
+    const m=/^(.*?)( · id .+)?$/.exec(String(x.det)),base=m[1].trim(),resto=m[2]||'';
+    if(/^Ficha N° /.test(x.det)){
+      if(f2)return x;
+      const big=/^Ficha N° (\d+)$/.exec(base);
+      if(!big||Number(big[1])<1e9)return x;                               // ya es un número de ficha corto
+      const p=Patients.get(big[1]);if(!p||Patients.fichaOf(p)==null)return x;
+      n++;return Object.assign({},x,{det:fichaTag(p)+resto});
+    }
+    if(f1)return x;
+    n++;
+    if(/^#?\d+$/.test(base)){const p=Patients.get(base.replace('#',''));return Object.assign({},x,{det:(p?fichaTag(p):'Ficha N° '+base.replace('#',''))+resto});}
+    const p=porNombre[base.toLowerCase()];
+    return Object.assign({},x,{det:(p?fichaTag(p):'(paciente no identificado)')+resto});
   });
-  if(!n){localStorage.setItem('oa3_audit_fichas','1');return 0;}
-  if(await idbSet('audit',out))localStorage.setItem('oa3_audit_fichas','1');
+  const done=()=>{localStorage.setItem('oa3_audit_fichas','1');localStorage.setItem('oa3_audit_fichas2','1');};
+  if(!n){done();return 0;}
+  if(await idbSet('audit',out))done();
   return n;
 }
 async function leerRegistro(){await flushAudit();await limpiarNombres().catch(()=>{});return((await idbGet('audit'))||[]);}
@@ -318,9 +331,9 @@ setInterval(actualizarBotonTopbar,1500);actualizarBotonTopbar();
 let lastConfirm=null;const _cf=window.confirm;window.confirm=function(){lastConfirm=_cf.apply(window,arguments);return lastConfirm;};
 const _save=window.save;window.save=function(){saves++;return _save.apply(this,arguments);};
 /* PRIVACIDAD (LOPDP): el registro NUNCA guarda nombres de pacientes, solo el N.° de ficha (el id del paciente). */
-const fichaTag=p=>(p&&p.id!=null)?'Ficha N° '+p.id:'';
+const fichaTag=p=>{if(!p||p.id==null)return'';const f=Patients.fichaOf(p);return 'Ficha N° '+(f!=null?f:p.id);};   // N.° de ficha corto; si aún no tiene, el id
 const ptName=()=>{try{return fichaTag(Patients.current());}catch(e){return'';}};        // (nombre antiguo) ahora devuelve la ficha
-const nom=id=>{try{return id!=null?'Ficha N° '+id:'';}catch(e){return'';}};
+const nom=id=>{try{if(id==null)return'';const p=Patients.get(id);return p?fichaTag(p):'Ficha N° '+id;}catch(e){return'';}};
 const ultimoPaciente=()=>()=>{try{return fichaTag(Patients.all()[Patients.all().length-1]);}catch(e){return'';}};   // función = se evalúa DESPUÉS de la acción (el id aún no existía)
 const despuesCurPt=()=>()=>{try{return fichaTag(Patients.current());}catch(e){return'';}};
 /* modo 'ver' → registra siempre | modo 'cambio' → solo si la acción llamó a save() (evita registrar validaciones fallidas o cancelaciones) | modo 'confirm' → solo si el usuario aceptó el confirm() */
@@ -377,11 +390,11 @@ hookOn(Finance,'markInvoicedUI','Marcó pago como facturado','cambio',id=>ptName
 hookOn(Finance,'saveExpense','Registró egreso','cambio',()=>'');
 hookOn(Finance,'deleteExpense','Eliminó egreso','cambio',id=>'id '+id);
 hookOn(Finance,'closeMonthUI','Cerró mes','cambio',(m,y)=>MONTHS_FULL[m]+' '+y);
-hookOn(Finance,'reopenUI','Reabrió mes (eliminó su resumen)','cambio',id=>{const a=archivosContables.find(x=>String(x.id)===String(id));return a?a.label:'id '+id;});
+hookOn(Finance,'reopenUI','Reabrió mes (eliminó su resumen)','cambio',id=>{const a=Finance.archives().find(x=>String(x.id)===String(id));return a?a.label:'id '+id;});
 hookOn(Finance,'printReceipt','Imprimió comprobante','ver',()=>ptName());
 hookOn(Finance,'downloadMonthly','Descargó informe mensual','ver',()=>'');
 hookOn(Finance,'downloadAnnual','Descargó informe anual','ver',y=>String(y));
-hookOn(Finance,'downloadArchive','Descargó informe de un mes archivado','ver',id=>{const a=archivosContables.find(x=>String(x.id)===String(id));return a?a.label:'id '+id;});
+hookOn(Finance,'downloadArchive','Descargó informe de un mes archivado','ver',id=>{const a=Finance.archives().find(x=>String(x.id)===String(id));return a?a.label:'id '+id;});
 hookOn(Consents,'add','Creó consentimiento','cambio',()=>ptName());
 hookOn(Consents,'saveCustom','Creó consentimiento personalizado','cambio',()=>ptName());
 hookOn(Consents,'confirmSign','Registró firma de consentimiento','cambio',id=>ptName()+' · id '+id);

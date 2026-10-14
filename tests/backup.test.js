@@ -86,7 +86,7 @@ srv.listen(0, async () => {
   check('pregunta con los números REALES del archivo y, si dices que no, no cambia nada', asked.length === 1 && /3 paciente\(s\), 1 egreso\(s\)/.test(asked[0]) && E('Patients.all().length') === before && E("idbGet('pre_restore')") !== undefined, asked[0]);
   confirmAns = true; asked.length = 0; alerts.length = 0; E("Backup.importUI()"); await pickFile(JSON.stringify(good));
   check('al aceptar: datos, clínica y medicamentos reemplazados', E('Patients.all().length') === 3 && D.getElementById('logoText').textContent === 'Importada SA' && E('MEDICAMENTOS_COMUNES.length') === 1 && /Importación exitosa/.test(lastAlert()), lastAlert());
-  check('…el contador de recetas queda por encima de la receta 21 y el monto con 2 decimales', E('nextRecetaId') > 21 && E('egresos[0].monto') === 10.46, E('nextRecetaId') + ' ' + E('egresos[0].monto'));
+  check('…el contador de recetas queda por encima de la receta 21 y el monto con 2 decimales', E('nextRecetaId') > 21 && E('Finance.expenses()[0].monto') === 10.46, E('nextRecetaId') + ' ' + E('Finance.expenses()[0].monto'));
   check('…y se guardó una copia de lo anterior', (await E("idbGet('pre_restore')")).pacientes === before);
   await wait(900); check('lo importado se guarda de verdad (sobrevive a recargar)', (await E("idbGet('state')")).patients.length === 3 && (await E("idbGet('state')")).patients[0].name === 'Zoe Importada');
   // deshacer

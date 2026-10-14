@@ -2,7 +2,7 @@
   "name": "odontoapp",
   "private": true,
   "scripts": {
-    "test": "node tests/smoke.js && node tests/arquitectura.test.js && node tests/security.test.js && node tests/balance.test.js && node tests/recalls.test.js && node tests/recalls.ui.test.js && node tests/money.test.js && node tests/patients.test.js && node tests/finance.test.js && node tests/clinical.test.js && node tests/chart.test.js && node tests/agenda.test.js && node tests/ui.test.js && node tests/cloud.test.js && node tests/security.ui.test.js && node tests/backup.test.js && node tests/xss.test.js && node tests/sync.merge.test.js && node tests/sync.pg.test.js",
+    "test": "node tests/smoke.js && node tests/arquitectura.test.js && node tests/security.test.js && node tests/balance.test.js && node tests/recalls.test.js && node tests/recalls.ui.test.js && node tests/money.test.js && node tests/patients.test.js && node tests/ficha.test.js && node tests/finance.test.js && node tests/clinical.test.js && node tests/chart.test.js && node tests/agenda.test.js && node tests/ui.test.js && node tests/cloud.test.js && node tests/security.ui.test.js && node tests/backup.test.js && node tests/xss.test.js && node tests/sync.merge.test.js && node tests/sync.pg.test.js",
     "test:pg": "node tests/sync.pg.test.js"
   },
   "devDependencies": {

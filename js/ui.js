@@ -57,12 +57,12 @@ var Dashboard=(function(){
       });
       if(p.birthdate&&String(p.birthdate).slice(5)===md)birthdays.push(p);
     });
-    quickAppts.forEach(function(a){
+    Appts.quick().forEach(function(a){
       if(!a||!a.date||!isPending(a))return;
       var row={id:a.id,date:a.date,time:a.time||'',reason:a.reason||'',ptName:a.ptName||'',ptId:null,type:'quick'};
       if(a.date===td)todayAppts.push(row);else if(a.date>td)upcoming.push(row);
     });
-    egresos.forEach(function(e){if(e&&!e.archivado&&String(e.fecha||'').slice(0,7)===ym)mEgresos=addM(mEgresos,e.monto);});
+    Finance.expenses().forEach(function(e){if(e&&!e.archivado&&String(e.fecha||'').slice(0,7)===ym)mEgresos=addM(mEgresos,e.monto);});
     todayAppts.sort(byTime);
     upcoming.sort(function(a,b){return a.date.localeCompare(b.date)||byTime(a,b);});
     factPend.sort(function(a,b){return String(b.date).localeCompare(String(a.date));});
@@ -174,6 +174,8 @@ var Logo=(function(){
 
 /* ═══════════════ CATÁLOGO DE SERVICIOS ═══════════════ */
 var Services=(function(){
+  var servicios=[];   // ESTADO PRIVADO: se lee con list() (la misma lista) y se reemplaza con setAll(lista)
+  function setAll(l){servicios=Array.isArray(l)?l:[];return servicios;}
   var CATS=['Prevención','Operatoria','Endodoncia','Cirugía','Ortodoncia','Prótesis','Periodoncia','Estética','Radiología','General'];
   function norm(s){return String(s==null?'':s).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();}
   function ensureIds(){servicios.forEach(function(s){if(s&&s.id==null)s.id=uid();});}
@@ -199,7 +201,7 @@ var Services=(function(){
   function add(f){var c=check(f);if(!c.ok)return c;var s={id:uid(),nombre:c.clean.nombre,precio:c.clean.precio,categoria:c.clean.categoria};servicios.push(s);save();return {ok:true,service:s,warnings:c.warnings};}
   function update(id,f){var s=get(id);if(!s)return {ok:false,error:'Ese servicio ya no existe.'};var c=check(f,id);if(!c.ok)return c;s.nombre=c.clean.nombre;s.precio=c.clean.precio;s.categoria=c.clean.categoria;save();return {ok:true,service:s,warnings:c.warnings};}
   function remove(id){ensureIds();var n=servicios.length;for(var i=servicios.length-1;i>=0;i--){if(String(servicios[i].id)===String(id))servicios.splice(i,1);}if(servicios.length===n)return false;save();return true;}
-  return {CATS:CATS,list:list,get:get,check:check,add:add,update:update,remove:remove};
+  return {CATS:CATS,list:list,setAll:setAll,get:get,check:check,add:add,update:update,remove:remove};
 })();
 
 /* ═══════════════ MEDICAMENTOS SUGERIDOS ═══════════════ */
@@ -333,7 +335,7 @@ var Settings=(function(){
     Logo.COLORS.map(function(c){return '<div class="cs'+(c===logoColor?' sel':'')+'" role="button" aria-label="Color '+c+'" style="background:'+c+'" data-action="settings.color" data-color="'+c+'"></div>';}).join('')+'</div>'+
     '<label style="margin-top:14px;display:block">Modo de visualización</label><div style="display:flex;gap:10px;margin-top:6px">'+modeBtn('dark','🌙 Oscuro',dark)+modeBtn('light','☀️ Claro',!dark)+'</div></div></div></div>'+
 
-    '<div class="card"><div class="card-title">🦷 Catálogo de servicios</div><div style="font-size:12px;color:var(--text3);margin-bottom:10px">Aparecen como atajo al registrar tratamientos y pagos.</div>'+
+    '<div class="card"><div class="card-title">🦷 Catálogo de Services.list()</div><div style="font-size:12px;color:var(--text3);margin-bottom:10px">Aparecen como atajo al registrar tratamientos y pagos.</div>'+
     '<div style="max-height:220px;overflow-y:auto;margin-bottom:12px">'+(svcs.length?svcs.map(svcRow).join(''):'<div style="font-size:12px;color:var(--text3);padding:12px;text-align:center;border:1px dashed var(--border);border-radius:8px">Sin servicios configurados</div>')+'</div>'+
     '<div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:end">'+
     '<div class="form-group" style="margin:0"><label>Nombre</label><input type="text" id="cfg_svcnombre" placeholder="Obturación resina..." data-on-keydown="settings.svcKey"></div>'+

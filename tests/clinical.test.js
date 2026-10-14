@@ -184,7 +184,7 @@ srv.listen(0, async () => {
   check('eliminar con «y sus tratamientos pendientes» quita el presupuesto y solo los pendientes; lo ya REALIZADO se conserva', rm.treatmentsRemoved === ap.created.length && E('Patients.all()[0].treatments.length') === 1 && E('Patients.all()[0].treatments[0].status') === 'realizado' && E('Patients.all()[0].presupuestos.length') === 1);
 
   // ───────── 8. presupuestos: pantalla ─────────
-  seed({ treatments: [] }); E("servicios.length=0;servicios.push({id:1,nombre:'Resina \"x\"<b>',precio:35})"); E("Ficha.tab('presupuestos')");
+  seed({ treatments: [] }); E("Services.list().length=0;Services.list().push({id:1,nombre:'Resina \"x\"<b>',precio:35})"); E("Ficha.tab('presupuestos')");
   click($('[data-action="quotes.openNew"]'));
   check('«Nuevo presupuesto» abre el formulario con una fila vacía y el catálogo de servicios', modalOpen() && !!D.getElementById('pin_1') && !!$('#modalContent [data-action="quotes.addFromSvc"]'), modal().slice(0, 120));
   click($('#modalContent [data-action="quotes.addFromSvc"]'));

@@ -1,4 +1,4 @@
-// Módulo Finanzas: pagos, egresos, cierre y reapertura de mes, informes, comprobante, seguridad y auditoría.
+// Módulo Finanzas: pagos, Finance.expenses(), cierre y reapertura de mes, informes, comprobante, seguridad y auditoría.
 require('fake-indexeddb/auto');
 const http = require('http'), fs = require('fs'), path = require('path');
 const { JSDOM, VirtualConsole } = require('jsdom');
@@ -30,7 +30,7 @@ srv.listen(0, async () => {
   const PM = (CM + 11) % 12, PY = CM === 0 ? CY - 1 : CY;            // mes anterior
   const day = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
   const seed = (pts, eg, arch) => { w.__p = JSON.parse(JSON.stringify(pts)); w.__e = JSON.parse(JSON.stringify(eg || [])); w.__a = JSON.parse(JSON.stringify(arch || []));
-    E('Patients.all().length=0;Patients.setCurrent(null);__p.forEach(p=>Patients.all().push(Patients.blank(p)));egresos.length=0;__e.forEach(e=>egresos.push(e));archivosContables.length=0;__a.forEach(a=>archivosContables.push(a));saveNow();'); };
+    E('Patients.all().length=0;Patients.setCurrent(null);__p.forEach(p=>Patients.all().push(Patients.blank(p)));Finance.expenses().length=0;__e.forEach(e=>Finance.expenses().push(e));Finance.archives().length=0;__a.forEach(a=>Finance.archives().push(a));saveNow();'); };
   const pay = (id, amount, date, o = {}) => Object.assign({ id, amount, date, type: 'Efectivo', concept: 'Pago ' + id }, o);
   const eg = (id, monto, fecha, o = {}) => Object.assign({ id, concepto: 'Gasto ' + id, categoria: 'Materiales', monto, fecha, proveedor: '' }, o);
 
@@ -66,7 +66,7 @@ srv.listen(0, async () => {
   E("showPage('estadisticas')");
   check('la pantalla de Finanzas lo avisa: «2 movimientos sin fecha válida ($45.00)»', /2 movimientos sin fecha válida \(\$45\.00\)/.test(main()), main().slice(0, 200));
   click($('[data-action="patients.select"][data-id="1"]')); check('«Ver paciente» abre su ficha para corregirlo', E('Patients.current().id') === 1);
-  E("showPage('estadisticas')"); click($('[data-action="finance.deleteExpense"]')); check('y el egreso sin fecha se puede eliminar desde el aviso (queda solo el pago sin fecha)', E('egresos.length') === 0 && E('Finance.dataIssues().egresos.length') === 0 && E('Finance.dataIssues().total') === 1 && /1 movimiento sin fecha válida \(\$30\.00\)/.test(main()));
+  E("showPage('estadisticas')"); click($('[data-action="finance.deleteExpense"]')); check('y el egreso sin fecha se puede eliminar desde el aviso (queda solo el pago sin fecha)', E('Finance.expenses().length') === 0 && E('Finance.dataIssues().egresos.length') === 0 && E('Finance.dataIssues().total') === 1 && /1 movimiento sin fecha válida \(\$30\.00\)/.test(main()));
 
   // ───────── 5. validación ─────────
   const CP = f => JSON.parse(JSON.stringify(E(`Finance.checkPayment(${JSON.stringify(f)})`))), CE = f => JSON.parse(JSON.stringify(E(`Finance.checkExpense(${JSON.stringify(f)})`)));
@@ -82,21 +82,21 @@ srv.listen(0, async () => {
   check('markInvoiced la marca como facturada en cualquier paciente', E(`Finance.markInvoiced(${a1.id})`) === true && E(`Finance.findPayment(${a1.id}).py.factPendiente`) === false && E('Finance.markInvoiced(123)') === false);
   check('removePayment elimina solo ese pago, en el mismo arreglo', E(`Finance.removePayment(1,${a1.id})`).id === a1.id && E('Patients.all()[0].payments.length') === 1 && E('Finance.removePayment(1,123)') === null);
   const e1 = E(`Finance.addExpense({concepto:'Luz',categoria:'Servicios',monto:30,fecha:'${day(CY, CM, 1)}',proveedor:''})`);
-  check('addExpense / removeExpense: alta y baja en el mismo arreglo', E('egresos.length') === 1 && E(`Finance.removeExpense(${e1.id}).id`) === e1.id && E('egresos.length') === 0 && E('Finance.removeExpense(1)') === null);
+  check('addExpense / removeExpense: alta y baja en el mismo arreglo', E('Finance.expenses().length') === 1 && E(`Finance.removeExpense(${e1.id}).id`) === e1.id && E('Finance.expenses().length') === 0 && E('Finance.removeExpense(1)') === null);
 
   // ───────── 7. cerrar y reabrir un mes ─────────
   seed([{ id: 1, name: 'Ana', payments: [pay(1, 40.1, day(PY, PM, 10)), pay(2, 0.2, day(PY, PM, 11)), pay(3, 99, day(CY, CM, 1))] }, { id: 2, name: 'Beto', payments: [pay(4, 10, day(PY, PM, 12))] }], [eg(1, 25.05, day(PY, PM, 9)), eg(2, 7, day(CY, CM, 2))]);
   check('cerrar un mes sin movimientos se rechaza', E('Finance.closeMonth(0,1999)').error === 'empty');
-  const cl = E(`Finance.closeMonth(${PM},${PY})`), arch = E('archivosContables[0]');
+  const cl = E(`Finance.closeMonth(${PM},${PY})`), arch = E('Finance.archives()[0]');
   check('cerrar el mes: resumen con totales exactos (50.30 / 25.05 / 25.25), 3 pagos y 2 pacientes', cl.ok && arch.totalIngresos === 50.3 && arch.totalEgresos === 25.05 && arch.utilidad === 25.25 && arch.pagos.length === 3 && arch.pacientesAtendidos === 2 && /\d{4}$/.test(arch.label), JSON.stringify([arch.totalIngresos, arch.totalEgresos, arch.utilidad]));
-  check('los movimientos del mes quedan archivados y los del mes actual no', E('Patients.all()[0].payments[0].archivado') === true && E('Patients.all()[1].payments[0].archivado') === true && E('egresos[0].archivado') === true && !E('Patients.all()[0].payments[2].archivado') && !E('egresos[1].archivado'));
+  check('los movimientos del mes quedan archivados y los del mes actual no', E('Patients.all()[0].payments[0].archivado') === true && E('Patients.all()[1].payments[0].archivado') === true && E('Finance.expenses()[0].archivado') === true && !E('Patients.all()[0].payments[2].archivado') && !E('Finance.expenses()[1].archivado'));
   check('el mes ya no suma en las estadísticas vivas, pero sí en el total del año', E(`Finance.monthData(${PM},${PY}).totalIngresos`) === 0 && E(`Finance.monthData(${PM},${PY},{includeArchived:true}).totalIngresos`) === 50.3);
-  E('egresos[0].monto=999'); check('el resumen guarda una COPIA de los egresos (cambiar uno vivo no altera lo archivado)', E('archivosContables[0].egresos[0].monto') === 25.05); E('egresos[0].monto=25.05');
-  check('cerrar dos veces el mismo mes se rechaza', E(`Finance.closeMonth(${PM},${PY})`).error === 'closed' && E('archivosContables.length') === 1);
-  const cnt = E('Finance.archivedCount(archivosContables[0])'); check('archivedCount cuenta lo que se reabriría (3 pagos, 1 egreso)', cnt.pagos === 3 && cnt.egresos === 1);
+  E('Finance.expenses()[0].monto=999'); check('el resumen guarda una COPIA de los egresos (cambiar uno vivo no altera lo archivado)', E('Finance.archives()[0].egresos[0].monto') === 25.05); E('Finance.expenses()[0].monto=25.05');
+  check('cerrar dos veces el mismo mes se rechaza', E(`Finance.closeMonth(${PM},${PY})`).error === 'closed' && E('Finance.archives().length') === 1);
+  const cnt = E('Finance.archivedCount(Finance.archives()[0])'); check('archivedCount cuenta lo que se reabriría (3 pagos, 1 egreso)', cnt.pagos === 3 && cnt.egresos === 1);
   const re = E(`Finance.reopenMonth(${arch.id})`);
-  check('reabrir el mes: el resumen desaparece y sus movimientos vuelven a contarse', re.pagos === 3 && re.egresos === 1 && E('archivosContables.length') === 0 && E(`Finance.monthData(${PM},${PY}).totalIngresos`) === 50.3 && E('Patients.all()[0].payments[0].archivado') === undefined && E('egresos[0].archivado') === undefined, JSON.stringify(re));
-  check('y se puede cerrar de nuevo con los mismos totales', E(`Finance.closeMonth(${PM},${PY})`).ok && E('archivosContables[0].totalIngresos') === 50.3);
+  check('reabrir el mes: el resumen desaparece y sus movimientos vuelven a contarse', re.pagos === 3 && re.egresos === 1 && E('Finance.archives().length') === 0 && E(`Finance.monthData(${PM},${PY}).totalIngresos`) === 50.3 && E('Patients.all()[0].payments[0].archivado') === undefined && E('Finance.expenses()[0].archivado') === undefined, JSON.stringify(re));
+  check('y se puede cerrar de nuevo con los mismos totales', E(`Finance.closeMonth(${PM},${PY})`).ok && E('Finance.archives()[0].totalIngresos') === 50.3);
   seed([{ id: 1, name: 'Ana', payments: [pay(1, 10, day(PY, PM, 3), { archivado: true })] }], [], [{ id: 77, mes: PM, anio: PY, label: 'Mes viejo', pagos: [], egresos: [], totalIngresos: 10, totalEgresos: 0, utilidad: 10 }]);
   check('reabrir un cierre antiguo (sin ids de pagos guardados) también funciona', E('Finance.reopenMonth(77)').pagos === 1 && E('Patients.all()[0].payments[0].archivado') === undefined && E('Finance.reopenMonth(77)') === null);
 
@@ -123,24 +123,24 @@ srv.listen(0, async () => {
   click($('[data-action="finance.openAddPay"]')); setv('f_pya', '15'); setv('f_pyd', day(PY, PM, 20)); confirmAnswer = false; confirms.length = 0; click($('[data-action="finance.savePay"]'));
   check('registrar un pago fechado en un mes ya cerrado avisa que no se sumará a ese cierre y permite cancelar', confirms.some(c => /ya está cerrado/.test(c) && /NO se sumará/.test(c)) && E('Patients.all()[0].payments.length') === 1);
   confirmAnswer = true; click($('[data-action="finance.savePay"]'));
-  check('si el usuario acepta, se guarda, queda fuera del resumen archivado y cuenta en el total del año', E('Patients.all()[0].payments.length') === 2 && E('archivosContables[0].totalIngresos') === 40 && E(`Finance.yearLive(${PY}).ingresos`) >= 15);
+  check('si el usuario acepta, se guarda, queda fuera del resumen archivado y cuenta en el total del año', E('Patients.all()[0].payments.length') === 2 && E('Finance.archives()[0].totalIngresos') === 40 && E(`Finance.yearLive(${PY}).ingresos`) >= 15);
   E('closeModal()'); E("Ficha.tab('pagos')");
   const delArch = $$('[data-action="finance.deletePayment"]').find(b => /Pago 1/.test(b.closest('.row-item').textContent));
   confirmAnswer = false; confirms.length = 0; click(delArch);
   check('eliminar un pago de un mes cerrado: el aviso muestra concepto, monto, fecha y advierte que el resumen no cambiará', confirms.some(c => /Pago 1/.test(c) && /\$40\.00/.test(c) && /mes ya cerrado/.test(c)) && E('Patients.all()[0].payments.length') === 2);
   confirmAnswer = true; click(delArch); check('al confirmar se elimina', E('Patients.all()[0].payments.length') === 1);
 
-  // ───────── 10. egresos por clics ─────────
+  // ───────── 10. Finance.expenses() por clics ─────────
   seed([{ id: 1, name: 'Ana' }]); E("showPage('estadisticas')");
   click($('[data-action="finance.openAddExpense"]'));
   alerts.length = 0; setv('f_ec', '  '); setv('f_em', '10'); click($('[data-action="finance.saveExpense"]'));
-  check('egreso sin concepto: aviso (antes se ignoraba en silencio)', alerts.some(a => /concepto es obligatorio/i.test(a)) && E('egresos.length') === 0);
+  check('egreso sin concepto: aviso (antes se ignoraba en silencio)', alerts.some(a => /concepto es obligatorio/i.test(a)) && E('Finance.expenses().length') === 0);
   setv('f_ec', 'Luz'); setv('f_ef', ''); alerts.length = 0; click($('[data-action="finance.saveExpense"]'));
-  check('egreso sin fecha válida: aviso y no se guarda', alerts.some(a => /fecha del egreso/i.test(a)) && E('egresos.length') === 0);
+  check('egreso sin fecha válida: aviso y no se guarda', alerts.some(a => /fecha del egreso/i.test(a)) && E('Finance.expenses().length') === 0);
   setv('f_ef', E('today()')); setv('f_ecat', 'Servicios'); setv('f_ep', 'CNEL EP'); click($('[data-action="finance.saveExpense"]'));
-  check('egreso válido: se guarda, cierra el formulario y aparece en la lista y en «por categoría»', E('egresos.length') === 1 && !modalOpen() && /Luz/.test(main()) && /CNEL EP/.test(main()) && /Servicios/.test(main()));
-  confirmAnswer = false; confirms.length = 0; click($('[data-action="finance.deleteExpense"]')); check('eliminar egreso: pide confirmación mostrando qué se elimina; "no" lo conserva', confirms.some(c => /Luz/.test(c) && /\$10\.00/.test(c)) && E('egresos.length') === 1);
-  confirmAnswer = true; click($('[data-action="finance.deleteExpense"]')); check('al confirmar se elimina y la pantalla se actualiza', E('egresos.length') === 0 && !/CNEL EP/.test(main()));
+  check('egreso válido: se guarda, cierra el formulario y aparece en la lista y en «por categoría»', E('Finance.expenses().length') === 1 && !modalOpen() && /Luz/.test(main()) && /CNEL EP/.test(main()) && /Servicios/.test(main()));
+  confirmAnswer = false; confirms.length = 0; click($('[data-action="finance.deleteExpense"]')); check('eliminar egreso: pide confirmación mostrando qué se elimina; "no" lo conserva', confirms.some(c => /Luz/.test(c) && /\$10\.00/.test(c)) && E('Finance.expenses().length') === 1);
+  confirmAnswer = true; click($('[data-action="finance.deleteExpense"]')); check('al confirmar se elimina y la pantalla se actualiza', E('Finance.expenses().length') === 0 && !/CNEL EP/.test(main()));
 
   // ───────── 11. cerrar / ver / reabrir desde la pantalla ─────────
   seed([{ id: 1, name: 'Ana', payments: [pay(1, 40, day(PY, PM, 10)), pay(2, 10, day(CY, CM, 1))] }], [eg(1, 15, day(PY, PM, 9))]); E("showPage('estadisticas')");
@@ -148,14 +148,14 @@ srv.listen(0, async () => {
   check('«Cerrar mes» lista los últimos 12 meses con sus totales y solo ofrece cerrar los que tienen movimientos', /Cerrar y archivar mes/.test(modal()) && $$('#modalContent [data-action="finance.closeMonth"]').length === 2 && /Sin movimientos/.test(modal()));
   const btnPrev = $$('#modalContent [data-action="finance.closeMonth"]').find(b => b.dataset.m === String(PM) && b.dataset.y === String(PY));
   confirmAnswer = false; confirms.length = 0; click(btnPrev);
-  check('cerrar un mes muestra el resumen exacto y permite cancelar sin cambios', confirms.some(c => /Ingresos: \$40\.00/.test(c) && /Egresos: \$15\.00/.test(c) && /Utilidad: \$25\.00/.test(c)) && E('archivosContables.length') === 0);
+  check('cerrar un mes muestra el resumen exacto y permite cancelar sin cambios', confirms.some(c => /Ingresos: \$40\.00/.test(c) && /Egresos: \$15\.00/.test(c) && /Utilidad: \$25\.00/.test(c)) && E('Finance.archives().length') === 0);
   confirmAnswer = true; alerts.length = 0; click(btnPrev);
-  check('al confirmar: se archiva sin recargar la página y la pantalla muestra el resumen anual', E('archivosContables.length') === 1 && alerts.some(a => /cerrado y archivado correctamente/.test(a)) && /Resumen anual/.test(main()) && /TOTAL AÑO/.test(main()) && !modalOpen());
+  check('al confirmar: se archiva sin recargar la página y la pantalla muestra el resumen anual', E('Finance.archives().length') === 1 && alerts.some(a => /cerrado y archivado correctamente/.test(a)) && /Resumen anual/.test(main()) && /TOTAL AÑO/.test(main()) && !modalOpen());
   click($('[data-action="finance.viewArchive"]')); check('«Ver» muestra el detalle archivado con sus pagos y egresos', /Detalle archivado/.test(modal()) && /Ingresos \(1\)/.test(modal()) && /Egresos \(1\)/.test(modal()) && /\$25\.00/.test(modal())); E('closeModal()');
   confirmAnswer = false; confirms.length = 0; click($('[data-action="finance.reopenMonth"]'));
-  check('la ✕ del resumen ahora REABRE el mes y explica lo que pasará (1 pago y 1 egreso)', confirms.some(c => /Reabrir/.test(c) && /1 pago y 1 egreso/.test(c)) && E('archivosContables.length') === 1);
+  check('la ✕ del resumen ahora REABRE el mes y explica lo que pasará (1 pago y 1 egreso)', confirms.some(c => /Reabrir/.test(c) && /1 pago y 1 egreso/.test(c)) && E('Finance.archives().length') === 1);
   confirmAnswer = true; click($('[data-action="finance.reopenMonth"]'));
-  check('al confirmar: el resumen se elimina, los movimientos vuelven a contarse y NO desaparecen de los reportes', E('archivosContables.length') === 0 && E(`Finance.monthData(${PM},${PY}).totalIngresos`) === 40 && E('Patients.all()[0].payments[0].archivado') === undefined);
+  check('al confirmar: el resumen se elimina, los movimientos vuelven a contarse y NO desaparecen de los reportes', E('Finance.archives().length') === 0 && E(`Finance.monthData(${PM},${PY}).totalIngresos`) === 40 && E('Patients.all()[0].payments[0].archivado') === undefined);
 
   // ───────── 12. datos hostiles ─────────
   const EV = '<img src=x onerror=window.__xss=1>';

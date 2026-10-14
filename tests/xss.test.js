@@ -38,12 +38,12 @@ srv.listen(0, async () => {
     clinicaRUC=${JSON.stringify('1' + P)};clinicaDireccion=${JSON.stringify('Dir' + P)};clinicaTelefono=${JSON.stringify('9' + P)};logoImg=${JSON.stringify('x' + P)};MEDICAMENTOS_COMUNES=[${JSON.stringify('Amoxicilina' + P)}];`); };
   const seedAll = skip => {
     const j = o => 'JSON.parse(' + JSON.stringify(JSON.stringify(o)) + ')';
-    E(`Patients.all().length=0;egresos.length=0;archivosContables.length=0;servicios.length=0;quickAppts.length=0;
+    E(`Patients.all().length=0;Finance.expenses().length=0;Finance.archives().length=0;Services.list().length=0;Appts.quick().length=0;
       Patients.all().push(Patients.blank(${j(hostile(spec(1, d), '', skip))}));Patients.all().push(Patients.blank(${j(hostile(spec(2, d), '', skip))}));
-      egresos.push(${j(hostile({ id: 1, concepto: 'x', categoria: 'Otro', monto: 5, fecha: d, proveedor: 'x' }, '', skip))});
-      servicios.push(${j(hostile({ id: 1, nombre: 'x', precio: 5 }, '', skip))});
-      quickAppts.push(${j(hostile({ id: 'q1', ptName: 'x', reason: 'x', notes: 'x', date: d, time: '10:00', status: 'pendiente', phone: 'x', recordado: 'x' }, '', skip))});
-      archivosContables.push(${j(hostile({ id: 5, mes: 0, anio: 2026, label: 'x', fechaCierre: d, totalIngresos: 5, totalEgresos: 1, utilidad: 4, pagos: [{ paciente: 'x', concepto: 'x', monto: 5, fecha: d, tipo: 'x' }], egresos: [{ concepto: 'x', categoria: 'x', monto: 1, fecha: d }] }, '', skip))});
+      Finance.expenses().push(${j(hostile({ id: 1, concepto: 'x', categoria: 'Otro', monto: 5, fecha: d, proveedor: 'x' }, '', skip))});
+      Services.list().push(${j(hostile({ id: 1, nombre: 'x', precio: 5 }, '', skip))});
+      Appts.quick().push(${j(hostile({ id: 'q1', ptName: 'x', reason: 'x', notes: 'x', date: d, time: '10:00', status: 'pendiente', phone: 'x', recordado: 'x' }, '', skip))});
+      Finance.archives().push(${j(hostile({ id: 5, mes: 0, anio: 2026, label: 'x', fechaCierre: d, totalIngresos: 5, totalEgresos: 1, utilidad: 4, pagos: [{ paciente: 'x', concepto: 'x', monto: 5, fecha: d, tipo: 'x' }], egresos: [{ concepto: 'x', categoria: 'x', monto: 1, fecha: d }] }, '', skip))});
       Patients.setCurrent(Patients.all()[0]);`);
     setSetting();
   };
@@ -101,7 +101,7 @@ srv.listen(0, async () => {
   const N = { medico: "Dra. Ríos & O'Neil \"Jr\"", diag: 'Dolor <10 & fiebre', obs: "Control 'mensual' & revisión" };
   setSettingNormal();
   function setSettingNormal() { E(`document.getElementById('logoText').textContent=${JSON.stringify("Clínica O'Neil & Hijos")};clinicaRUC='1790012345001';clinicaDireccion='Av. 6 de Dic. & Colón';clinicaTelefono='02-2345678';logoImg='';MEDICAMENTOS_COMUNES=['Amoxicilina 500 mg','Ibuprofeno & paracetamol'];`); }
-  E(`Patients.all().length=0;egresos.length=0;archivosContables.length=0;servicios.length=0;quickAppts.length=0;
+  E(`Patients.all().length=0;Finance.expenses().length=0;Finance.archives().length=0;Services.list().length=0;Appts.quick().length=0;
      Patients.all().push(Patients.blank({id:1,name:"Ana O'Neil & Co",cedula:'1712345678',phone:'0991234567',
       recetas:[{id:1,fecha:'${d}',tipo:'agudo',medico:${JSON.stringify(N.medico)},especialidad:'Odontología & cirugía',registro:'R-1',hc:'H-1',diagnosticos:[{cod:'K02',desc:${JSON.stringify(N.diag)}}],cie10cod:'K02',diagnostico:${JSON.stringify(N.diag)},indicaciones:${JSON.stringify(N.obs)},paciente:"Ana O'Neil & Co",cedula:'1712345678',edad:30,medicamentos:[{nombre:'Ibuprofeno & paracetamol',formaFarmaceutica:'Tableta',concentracion:'400 mg',via:'Oral',cantidadNum:'10',cantidadLetras:'diez',dosis:'1',frecuencia:'Cada 8 horas',duracion:'3 días',indicaciones:'Con "alimentos" & agua'}]}],
       presupuestos:[{id:1,fecha:'${d}',validez:30,observaciones:${JSON.stringify(N.obs)},items:[{nombre:"Resina & pulido <molar>",precio:30,qty:1,subtotal:30}],descuento:0,subtotal:30,total:30,estado:'aprobado',firmaPaciente:''}],

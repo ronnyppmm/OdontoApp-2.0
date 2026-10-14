@@ -73,8 +73,8 @@ var Backup=(function(){
     return {
       version:'OdontoApp_v3',fechaExportacion:new Date().toISOString(),
       clinica:{clinicaNombre:$('logoText').textContent,profesional:$('logoProfesional').textContent,ruc:clinicaRUC,direccion:clinicaDireccion,telefono:clinicaTelefono,logoColor:logoColor,logoImg:logoImg},
-      totalPacientes:Patients.all().length,totalFacturas:facturas.length,totalEgresos:egresos.length,
-      patients:Patients.all(),egresos:egresos,facturas:facturas,servicios:servicios,archivosContables:archivosContables,quickAppts:quickAppts,
+      totalPacientes:Patients.all().length,totalFacturas:Finance.invoices().length,totalEgresos:Finance.expenses().length,
+      patients:Patients.all(),egresos:Finance.expenses(),facturas:Finance.invoices(),servicios:Services.list(),archivosContables:Finance.archives(),quickAppts:Appts.quick(),
       meds:MEDICAMENTOS_COMUNES,nextId:nextId,nextEgId:nextEgId,nextFactId:nextFactId,nextRecetaId:nextRecetaId,nextPresupId:nextPresupId
     };
   }
@@ -84,7 +84,7 @@ var Backup=(function(){
     try{return await idbSet('pre_restore',{t:Date.now(),motivo:motivo||'',pacientes:Patients.all().length,data:snapshot()});}catch(e){return false;}
   }
   function apply(d){
-    Patients.setAll(d.patients);egresos=d.egresos;facturas=d.facturas;servicios=d.servicios;archivosContables=d.archivosContables;quickAppts=d.quickAppts;
+    Patients.setAll(d.patients);Finance.setExpenses(d.egresos);Finance.setInvoices(d.facturas);Services.setAll(d.servicios);Finance.setArchives(d.archivosContables);Appts.setQuick(d.quickAppts);
     nextId=d.counters.nextId;nextEgId=d.counters.nextEgId;nextFactId=d.counters.nextFactId;nextRecetaId=d.counters.nextRecetaId;nextPresupId=d.counters.nextPresupId;
     if(d.clinic){
       $('logoText').textContent=d.clinic.nombre;$('logoProfesional').textContent=d.clinic.profesional;
@@ -178,10 +178,10 @@ var Backup=(function(){
   function resumenText(){
     var fecha=today();
     var ing=Patients.all().reduce(function(s,p){return addM(s,(p.payments||[]).reduce(function(a,py){return addM(a,py.amount);},0));},0);
-    var egr=egresos.reduce(function(s,e){return addM(s,e.monto);},0);
+    var egr=Finance.expenses().reduce(function(s,e){return addM(s,e.monto);},0);
     var pend=Patients.all().reduce(function(s,p){return s+(p.treatments||[]).filter(function(t){return t.status==='pendiente';}).length;},0);
     return 'RESUMEN OdontoApp — '+fecha+'\nClínica: '+$('logoText').textContent+'\nProfesional: '+$('logoProfesional').textContent+'\nRUC: '+(clinicaRUC||'—')+
-      '\n\nPACIENTES: '+Patients.all().length+' registrados\nTRATAMIENTOS PENDIENTES: '+pend+'\nINGRESOS TOTALES: '+money(ing)+'\nEGRESOS TOTALES: '+money(egr)+'\nUTILIDAD: '+money(ing-egr)+'\nFACTURAS EMITIDAS: '+facturas.length+'\n\nExportado desde OdontoApp el '+fecha;
+      '\n\nPACIENTES: '+Patients.all().length+' registrados\nTRATAMIENTOS PENDIENTES: '+pend+'\nINGRESOS TOTALES: '+money(ing)+'\nEGRESOS TOTALES: '+money(egr)+'\nUTILIDAD: '+money(ing-egr)+'\nFACTURAS EMITIDAS: '+Finance.invoices().length+'\n\nExportado desde OdontoApp el '+fecha;
   }
   function openMain(){
     var last=lsGetSafe('oa3_last_export');

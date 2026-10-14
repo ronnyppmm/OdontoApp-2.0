@@ -87,7 +87,7 @@ srv.listen(0, async () => {
   click(act('patients.saveNew')); await wait(200); await w.Seguridad._flush();
   log = (await E("idbGet('audit')")) || [];
   const cre = log.filter(x => x.ev === 'Creó paciente');
-  check('«Creó paciente» guarda el N.° de ficha del paciente nuevo, no su nombre', cre.length === 1 && cre[0].det === 'Ficha N° ' + E('Patients.current().id') && !/Privado/.test(JSON.stringify(log)), JSON.stringify(cre));
+  check('«Creó paciente» guarda el N.° de ficha del paciente nuevo, no su nombre', cre.length === 1 && cre[0].det === 'Ficha N° ' + E('Patients.current().ficha') && !/Privado/.test(JSON.stringify(log)), JSON.stringify(cre));
 
   // registros viejos con nombres: se limpian una vez
   await E(`idbSet('audit', [

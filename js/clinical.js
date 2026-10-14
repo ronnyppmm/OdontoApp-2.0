@@ -1054,10 +1054,10 @@ const Quotes=(function(){
         <button data-action="quotes.addBlank" style="font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600">+ Agregar ítem</button>
       </div>
       <div id="presup-items"></div>
-      ${servicios.length?`<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
+      ${Services.list().length?`<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
         <div style="font-size:10px;color:var(--text3);margin-bottom:6px">⚡ Del catálogo:</div>
         <div style="display:flex;flex-wrap:wrap;gap:5px">
-          ${servicios.map(s=>`<button data-action="quotes.addFromSvc" data-nombre="${esc(s.nombre)}" data-precio="${esc(s.precio)}" style="padding:4px 10px;border:1px solid var(--border);border-radius:16px;background:var(--card);font-size:11px;cursor:pointer;color:var(--text)">${esc(s.nombre)} <span style="color:var(--green);font-weight:600">$${s.precio.toFixed(2)}</span></button>`).join('')}
+          ${Services.list().map(s=>`<button data-action="quotes.addFromSvc" data-nombre="${esc(s.nombre)}" data-precio="${esc(s.precio)}" style="padding:4px 10px;border:1px solid var(--border);border-radius:16px;background:var(--card);font-size:11px;cursor:pointer;color:var(--text)">${esc(s.nombre)} <span style="color:var(--green);font-weight:600">$${s.precio.toFixed(2)}</span></button>`).join('')}
         </div></div>`:''}
     </div>
     <div class="form-row"><div class="form-group"><label>Descuento ($)</label><input id="f_pfdesc" type="number" min="0" step="0.01" value="0" data-on-input="quotes.recalc"></div><div class="form-group"><label>Total</label><div id="f_pftotal" style="font-size:22px;font-weight:700;color:var(--accent);padding:8px 0">$0.00</div></div></div>

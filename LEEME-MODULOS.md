@@ -137,3 +137,13 @@ También comprueba que el texto normal (con & ' " <) se vea bien, sin doble esca
 - **Las pruebas también usan la API** (`E('Patients.all()[0]')`), así que prueban lo mismo que usa la app.
 - **El barrido de inyecciones (`xss.test.js`) ahora recorre los métodos de 21 módulos** (79 funciones de dibujo; antes dependía de nombres globales y llegaba a ~50).
 - **Regla para hooks de auditoría:** `hookOn(Modulo,'metodo',…)`; ya no hay nombres globales que enganchar.
+
+## 16. Listas privadas y N.° de ficha corto (v22)
+- **Listas encapsuladas** como los pacientes: `Finance.expenses()/invoices()/archives()` (+ `setExpenses/setInvoices/setArchives`), `Services.list()/setAll()`, `Appts.quick()/setQuick()`. Ya no existen `egresos, facturas, archivosContables, servicios, quickAppts` como variables globales; `arquitectura.test.js` lo vigila (ni global ni usadas fuera de su dueño).
+- **Sigue global (core.js):** los contadores `nextId, nextEgId, nextFactId, nextRecetaId, nextPresupId`, porque los usan sync, respaldo y core.
+- **Bug corregido:** «Restablecer de fábrica» no vaciaba `archivosContables`; ahora limpia todas las listas y las copias.
+- **N.° de ficha** (`p.ficha`, entero 1..999 999 999): el paciente nuevo recibe `max(nextId, mayorFicha+1)` y `nextId` avanza → un número eliminado **nunca se reutiliza**. Pacientes antiguos con id pequeño conservan ficha = id; los de id largo reciben el siguiente libre por orden de creación (id menor primero). Repetidas: el más antiguo conserva el número, el otro se renumera. El algoritmo es determinista, así que dos dispositivos convergen. `Patients.assignFichas()` corre en `setAll`, en `blank()` y tras cada sincronización (y guarda).
+- **Búsqueda:** el filtro lateral y el buscador global aceptan `3`, `#3`, `ficha 3`, `N° 3` (coincidencia exacta del número, «33» no encuentra la 3).
+- **Registro de actividad:** anota «Ficha N° <ficha>» corta; las entradas con id largo (v20–v21) se convierten una vez (`oa3_audit_fichas2`). La ficha no es editable en el formulario.
+- **Pruebas:** `tests/ficha.test.js` (28 comprobaciones).
+- **Corrección v22.1 (auditoría):** la migración automática había metido nombres de API en 4 textos visibles («Facturas y Finance.expenses()», «Sin Services.list() configurados»…). Corregidos y protegidos con una prueba en `arquitectura.test.js` (ningún texto visible contiene `Finance.`, `Services.`, etc.).

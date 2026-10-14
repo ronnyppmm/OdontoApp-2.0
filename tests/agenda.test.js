@@ -37,7 +37,7 @@ srv.listen(0, async () => {
   const hostile = '<img src=x onerror=1 id=PWN>';
   const fillQuick = (f) => { Object.entries({ f_qa_name: f.name, f_qa_phone: f.phone, f_qa_reason: f.reason, f_qa_date: f.date, f_qa_time: f.time, f_qa_notes: f.notes }).forEach(([k, val]) => { if (val !== undefined) setv(k, val); }); };
 
-  E(`Patients.all().length=0;quickAppts.length=0;servicios.length=0;
+  E(`Patients.all().length=0;Appts.quick().length=0;Services.list().length=0;
      Patients.all().push(Patients.blank({id:1,name:'María Pérez',cedula:'1712345678',phone:'0991234567'}),Patients.blank({id:2,name:'Beto Sin Teléfono',cedula:'0912345678',phone:''}));saveNow();Patients.renderList();Agenda.goToday();`);
 
   // ───────── 1. estructura ─────────
@@ -62,32 +62,32 @@ srv.listen(0, async () => {
 
   // ───────── 3. nueva cita rápida ─────────
   click(act('agenda.openQuick')); check('«+ Nueva cita» abre el formulario con la fecha de hoy', modalOpen() && D.getElementById('f_qa_date').value === TD);
-  reset(); fillQuick({ name: '', reason: 'Dolor', date: FUT, time: '09:00' }); click(act('agenda.saveQuick')); check('sin nombre: avisa y no guarda', alerts.length === 1 && /nombre/i.test(alerts[0]) && E('quickAppts.length') === 0 && modalOpen());
-  reset(); fillQuick({ name: 'Zoe', reason: '', date: FUT, time: '09:00' }); click(act('agenda.saveQuick')); check('sin motivo: avisa', /motivo/i.test(alerts[0] || '') && E('quickAppts.length') === 0);
-  reset(); fillQuick({ name: 'Zoe', reason: 'Dolor', date: '', time: '09:00' }); click(act('agenda.saveQuick')); check('ANTES se guardaba sin fecha; ahora la fecha vacía se rechaza', /fecha/i.test(alerts[0] || '') && E('quickAppts.length') === 0, alerts[0]);
-  reset(); fillQuick({ name: 'Zoe', reason: 'Dolor', date: FUT, time: '' }); click(act('agenda.saveQuick')); check('ANTES se guardaba sin hora; ahora la hora vacía se rechaza', /hora/i.test(alerts[0] || '') && E('quickAppts.length') === 0, alerts[0]);
+  reset(); fillQuick({ name: '', reason: 'Dolor', date: FUT, time: '09:00' }); click(act('agenda.saveQuick')); check('sin nombre: avisa y no guarda', alerts.length === 1 && /nombre/i.test(alerts[0]) && E('Appts.quick().length') === 0 && modalOpen());
+  reset(); fillQuick({ name: 'Zoe', reason: '', date: FUT, time: '09:00' }); click(act('agenda.saveQuick')); check('sin motivo: avisa', /motivo/i.test(alerts[0] || '') && E('Appts.quick().length') === 0);
+  reset(); fillQuick({ name: 'Zoe', reason: 'Dolor', date: '', time: '09:00' }); click(act('agenda.saveQuick')); check('ANTES se guardaba sin fecha; ahora la fecha vacía se rechaza', /fecha/i.test(alerts[0] || '') && E('Appts.quick().length') === 0, alerts[0]);
+  reset(); fillQuick({ name: 'Zoe', reason: 'Dolor', date: FUT, time: '' }); click(act('agenda.saveQuick')); check('ANTES se guardaba sin hora; ahora la hora vacía se rechaza', /hora/i.test(alerts[0] || '') && E('Appts.quick().length') === 0, alerts[0]);
   reset(); fillQuick({ name: 'Zoe', phone: '0987654321', reason: 'Dolor', date: FUT, time: '09:00', notes: 'por WhatsApp' }); click(act('agenda.saveQuick'));
-  check('cita rápida válida: se guarda con id «q…», el formulario se cierra y el calendario sigue en pantalla', !modalOpen() && E('quickAppts.length') === 1 && /^q\d+$/.test(E('quickAppts[0].id')) && E('quickAppts[0].status') === 'pendiente' && E('quickAppts[0].type') === 'quick' && /Agenda de Citas|Hoy —/.test(main()));
+  check('cita rápida válida: se guarda con id «q…», el formulario se cierra y el calendario sigue en pantalla', !modalOpen() && E('Appts.quick().length') === 1 && /^q\d+$/.test(E('Appts.quick()[0].id')) && E('Appts.quick()[0].status') === 'pendiente' && E('Appts.quick()[0].type') === 'quick' && /Agenda de Citas|Hoy —/.test(main()));
   // aparece en el calendario (mes de FUT)
   const showMonthOf = d => { const [y, m] = d.split('-').map(Number); E(`Agenda.state.year=${y};Agenda.state.month=${m - 1};Agenda.show()`); };
   showMonthOf(FUT); check('la cita aparece en el día correcto del mes', $$('.cal-day').some(c => c.getAttribute('data-date') === FUT && /09:00 Zoe/.test(c.textContent)));
   // ───────── 4. persistencia ─────────
   await wait(500);
   const w2 = await openApp();
-  check('ANTES la cita rápida solo vivía en localStorage; ahora sobrevive en otro equipo/navegador (solo base IndexedDB)', w2.eval('quickAppts.length') === 1 && w2.eval('quickAppts[0].ptName') === 'Zoe', w2.eval('quickAppts.length')); w2.close();
+  check('ANTES la cita rápida solo vivía en localStorage; ahora sobrevive en otro equipo/navegador (solo base IndexedDB)', w2.eval('Appts.quick().length') === 1 && w2.eval('Appts.quick()[0].ptName') === 'Zoe', w2.eval('Appts.quick().length')); w2.close();
   reset(); showMonthOf(FUT); click($$('.cal-day').find(c => c.getAttribute('data-date') === FUT)); fillQuick({ name: 'Yago', reason: 'Control', time: '10:00' }); click(act('agenda.saveQuick'));
   await wait(900); const w3 = await openApp(); const cnt = await w3.eval("idbGet('state').then(b=>(b.quickAppts||[]).length)");
   check('ANTES una cita rápida nueva no llegaba a la base (ni a la nube) hasta el siguiente guardado; ahora se guarda al instante', cnt === 2, cnt); w3.close();
   // migración desde la clave antigua de localStorage
   const wl = await openApp(new IDBFactory(), { oa3_qa: JSON.stringify([{ id: 'q55', ptName: 'Antigua', phone: '', reason: 'Control', date: FUT, time: '08:00', status: 'pendiente', type: 'quick' }]) });
-  await wait(500); check('citas rápidas guardadas por la versión anterior (localStorage) se adoptan una sola vez', wl.eval('quickAppts.length') === 1 && wl.eval('quickAppts[0].ptName') === 'Antigua' && wl.localStorage.getItem('oa3_qa_ok') === '1');
-  wl.eval("quickAppts=[];save()"); await wait(500); wl.close();
+  await wait(500); check('citas rápidas guardadas por la versión anterior (localStorage) se adoptan una sola vez', wl.eval('Appts.quick().length') === 1 && wl.eval('Appts.quick()[0].ptName') === 'Antigua' && wl.localStorage.getItem('oa3_qa_ok') === '1');
+  wl.eval("Appts.setQuick([]);save()"); await wait(500); wl.close();
   // ───────── 5. avisos: pasada y doble reserva ─────────
   reset(); E(`Agenda.openQuick()`); fillQuick({ name: 'Nico', reason: 'Limpieza', date: PAST, time: '09:00' }); confirmAnswer = false; click(act('agenda.saveQuick'));
-  check('fecha pasada: avisa y, si dices no, no guarda', /ya pasó/.test(asked[0] || '') && E('quickAppts.length') === 2 && modalOpen(), asked[0]);
+  check('fecha pasada: avisa y, si dices no, no guarda', /ya pasó/.test(asked[0] || '') && E('Appts.quick().length') === 2 && modalOpen(), asked[0]);
   reset(); fillQuick({ name: 'Nico', reason: 'Limpieza', date: FUT, time: '09:00' }); confirmAnswer = false; click(act('agenda.saveQuick'));
-  check('doble reserva (misma fecha y hora): avisa quién ya está a esa hora; «no» no guarda', /ya hay una cita/.test(asked[0] || '') && /Zoe/.test(asked[0] || '') && E('quickAppts.length') === 2, asked[0]);
-  confirmAnswer = true; click(act('agenda.saveQuick')); check('«sí» la guarda igual (a veces se atienden dos a la vez)', E('quickAppts.length') === 3 && !modalOpen());
+  check('doble reserva (misma fecha y hora): avisa quién ya está a esa hora; «no» no guarda', /ya hay una cita/.test(asked[0] || '') && /Zoe/.test(asked[0] || '') && E('Appts.quick().length') === 2, asked[0]);
+  confirmAnswer = true; click(act('agenda.saveQuick')); check('«sí» la guarda igual (a veces se atienden dos a la vez)', E('Appts.quick().length') === 3 && !modalOpen());
   // ───────── 6. paciente registrado ─────────
   reset(); E('Agenda.openQuick()'); type('f_qa_search', 'maria');
   check('buscar «maria» encuentra a «María Pérez» (sin importar tildes)', !!act('agenda.pickPatient') && /María Pérez/.test(D.getElementById('f_qa_dropdown').textContent));
@@ -95,31 +95,31 @@ srv.listen(0, async () => {
   click(act('agenda.clearPatient')); check('«✕» limpia la selección', D.getElementById('f_qa_pt').value === '' && D.getElementById('f_qa_name').value === '');
   click(act('agenda.openQuick') || D.body); type('f_qa_search', '0991'); check('también se busca por teléfono', !!act('agenda.pickPatient'));
   click(act('agenda.pickPatient')); fillQuick({ reason: 'Revisión', date: FUT2, time: '11:00' }); click(act('agenda.saveQuick'));
-  check('cita de un paciente registrado: queda en SU ficha (no como cita rápida)', E('Patients.get(1).appointments.length') === 1 && E('Patients.get(1).appointments[0].reason') === 'Revisión' && E('quickAppts.length') === 3);
+  check('cita de un paciente registrado: queda en SU ficha (no como cita rápida)', E('Patients.get(1).appointments.length') === 1 && E('Patients.get(1).appointments[0].reason') === 'Revisión' && E('Appts.quick().length') === 3);
   reset(); E('Agenda.openQuick()'); fillQuick({ name: 'maría perez', reason: 'Control', date: FUT2, time: '12:00' }); confirmAnswer = true; click(act('agenda.saveQuick'));
-  check('escribir el nombre de un paciente que ya tiene ficha ofrece agendar en su ficha (evita citas «sueltas»)', /Ya existe un paciente llamado «María Pérez»/.test(asked[0] || '') && E('Patients.get(1).appointments.length') === 2 && E('quickAppts.length') === 3, asked[0]);
+  check('escribir el nombre de un paciente que ya tiene ficha ofrece agendar en su ficha (evita citas «sueltas»)', /Ya existe un paciente llamado «María Pérez»/.test(asked[0] || '') && E('Patients.get(1).appointments.length') === 2 && E('Appts.quick().length') === 3, asked[0]);
   reset(); E('Agenda.openQuick()'); fillQuick({ name: 'María Pérez', reason: 'Otra', date: FUT2, time: '13:00' }); confirmAnswer = false; click(act('agenda.saveQuick'));
-  check('…y si prefieres «cita rápida sin ficha», se crea como rápida', E('quickAppts.length') === 4 && E('Patients.get(1).appointments.length') === 2);
-  E('quickAppts.pop()');
+  check('…y si prefieres «cita rápida sin ficha», se crea como rápida', E('Appts.quick().length') === 4 && E('Patients.get(1).appointments.length') === 2);
+  E('Appts.quick().pop()');
 
   // ───────── 7. detalle de una cita ─────────
   reset(); showMonthOf(FUT); click($$('.cal-day [data-action="agenda.openDetail"]').find(c => /Zoe/.test(c.textContent)));
   check('clic en una cita del calendario abre su detalle (y no la «nueva cita» del día)', modalOpen() && /Detalle de cita/.test(modal()) && /Zoe/.test(modal()) && /por WhatsApp/.test(modal()) && /Cita rápida — sin ficha/.test(modal()));
-  setv('f_ad_reason', ''); click(act('agenda.saveDetail')); check('guardar sin motivo: avisa', /motivo/i.test(alerts[0] || '') && E('quickAppts[0].reason') === 'Dolor');
+  setv('f_ad_reason', ''); click(act('agenda.saveDetail')); check('guardar sin motivo: avisa', /motivo/i.test(alerts[0] || '') && E('Appts.quick()[0].reason') === 'Dolor');
   setv('f_ad_reason', 'Dolor fuerte'); setv('f_ad_time', '15:30'); setv('f_ad_status', 'completada'); click(act('agenda.saveDetail'));
-  check('editar: cambia motivo, hora y estado; el calendario lo pinta como completada', !modalOpen() && E('quickAppts[0].reason') === 'Dolor fuerte' && E('quickAppts[0].time') === '15:30' && E('quickAppts[0].status') === 'completada');
+  check('editar: cambia motivo, hora y estado; el calendario lo pinta como completada', !modalOpen() && E('Appts.quick()[0].reason') === 'Dolor fuerte' && E('Appts.quick()[0].time') === '15:30' && E('Appts.quick()[0].status') === 'completada');
   reset(); click($$('.cal-day [data-action="agenda.openDetail"]').find(c => /Zoe/.test(c.textContent))); setv('f_ad_date', PAST); setv('f_ad_status', 'pendiente'); confirmAnswer = false; click(act('agenda.saveDetail'));
-  check('reprogramar una cita pendiente al pasado pregunta; «no» deja la cita como estaba', /ya pasó/.test(asked[0] || '') && E('quickAppts[0].date') === FUT);
+  check('reprogramar una cita pendiente al pasado pregunta; «no» deja la cita como estaba', /ya pasó/.test(asked[0] || '') && E('Appts.quick()[0].date') === FUT);
   click(act('app.closeModal', '.btn-sec')); reset();
   // eliminar
   click($$('.cal-day [data-action="agenda.openDetail"]').find(c => /Zoe/.test(c.textContent))); confirmAnswer = false; click(act('agenda.deleteDetail'));
-  check('eliminar: el confirm nombra la cita; «no» la conserva', E('quickAppts.length') === 3 && /Zoe/.test(asked[0] || '') && /15:30/.test(asked[0] || ''), asked[0]);
-  confirmAnswer = true; click(act('agenda.deleteDetail')); check('al confirmar se elimina y el calendario se actualiza', E('quickAppts.length') === 2 && !modalOpen() && !/Zoe/.test(main()));
+  check('eliminar: el confirm nombra la cita; «no» la conserva', E('Appts.quick().length') === 3 && /Zoe/.test(asked[0] || '') && /15:30/.test(asked[0] || ''), asked[0]);
+  confirmAnswer = true; click(act('agenda.deleteDetail')); check('al confirmar se elimina y el calendario se actualiza', E('Appts.quick().length') === 2 && !modalOpen() && !/Zoe/.test(main()));
   // convertir en ficha
   showMonthOf(FUT); click($$('.cal-day [data-action="agenda.openDetail"]').find(c => /Nico/.test(c.textContent) || /Yago/.test(c.textContent))); click(act('agenda.openConvert'));
   check('«Crear ficha» abre el formulario de paciente con nombre y teléfono precargados', /Crear ficha de paciente/.test(modal()) && D.getElementById('f_name').value !== '');
   const qName = D.getElementById('f_name').value; setv('f_ced', '1799999999'); click(act('agenda.confirmConvert'));
-  check('al crearla: la ficha queda abierta con la cita dentro y la cita rápida desaparece', E('Patients.current().name') === qName && E('Patients.current().appointments.length') === 1 && E('quickAppts.length') === 1);
+  check('al crearla: la ficha queda abierta con la cita dentro y la cita rápida desaparece', E('Patients.current().name') === qName && E('Patients.current().appointments.length') === 1 && E('Appts.quick().length') === 1);
   // ver ficha desde una cita registrada
   showMonthOf(FUT2); click($$('.cal-day [data-action="agenda.openDetail"]').find(c => /María Pérez/.test(c.textContent))); click(act('agenda.openPatient'));
   check('«Ver ficha» abre al paciente dueño de la cita', E('Patients.current().id') === 1 && !modalOpen());
@@ -137,28 +137,28 @@ srv.listen(0, async () => {
   confirmAnswer = true; click(act('agenda.deleteOwn')); check('al confirmar se elimina', E('Patients.get(1).appointments.length') === 1);
 
   // ───────── 9. semana: horarios fuera de 07–19 h ─────────
-  E(`quickAppts.length=0;Patients.get(1).appointments.length=0;quickAppts.push({id:'qn',ptName:'Noche',phone:'',reason:'Urgencia',date:today(),time:'21:30',status:'pendiente',type:'quick'},{id:'qm',ptName:'Madrugada',phone:'',reason:'Urgencia',date:today(),time:'06:15',status:'no_asistio',type:'quick'});Agenda.goToday();Agenda.setView('week')`);
+  E(`Appts.quick().length=0;Patients.get(1).appointments.length=0;Appts.quick().push({id:'qn',ptName:'Noche',phone:'',reason:'Urgencia',date:today(),time:'21:30',status:'pendiente',type:'quick'},{id:'qm',ptName:'Madrugada',phone:'',reason:'Urgencia',date:today(),time:'06:15',status:'no_asistio',type:'quick'});Agenda.goToday();Agenda.setView('week')`);
   const grid = () => $$('.cal-cell').map(c => c.textContent).join(' | ');
   check('ANTES las citas a las 21:30 y 06:15 no se veían en Semana; ahora aparecen (la rejilla se amplía)', /21:30 Noche/.test(grid()) && /06:15 Madrugada/.test(grid()), grid().slice(0, 100));
   check('la cita «no asistió» se pinta en rojo también en Semana', $$('.cal-cell [data-action="agenda.openDetail"]').some(c => /Madrugada/.test(c.textContent) && /rgb\(254, 226, 226\)|#fee2e2/i.test(c.style.background || c.getAttribute('style'))));
   click($$('.cal-cell').find(c => c.getAttribute('data-time') === '09:00' && c.classList.contains('is-today'))); check('clic en una hora vacía abre «Nueva cita» con esa fecha y hora', modalOpen() && D.getElementById('f_qa_date').value === TD && D.getElementById('f_qa_time').value === '09:00'); click(act('app.closeModal', '.btn-sec'));
 
   // ───────── 10. robustez ─────────
-  E(`quickAppts.push({id:'qx',ptName:'Sin hora'},{id:'qy',ptName:null,reason:null,date:null,time:null});Patients.get(1).appointments.push({id:77,reason:'x'});`);
+  E(`Appts.quick().push({id:'qx',ptName:'Sin hora'},{id:'qy',ptName:null,reason:null,date:null,time:null});Patients.get(1).appointments.push({id:77,reason:'x'});`);
   let crash = ''; ['month', 'week', 'list'].forEach(v => { try { E(`Agenda.setView('${v}')`); } catch (e) { crash += v + ':' + e.message + ' '; } }); E("Agenda.setView('month')");
   check('citas con datos incompletos (sin hora, sin fecha, nulos) ya no tumban la pantalla de Agenda en ninguna vista', crash === '' && errs.length === 0, crash + errs.join('|'));
-  E("quickAppts=quickAppts.filter(a=>a.id==='qn'||a.id==='qm');Patients.get(1).appointments.length=0");
+  E("Appts.setQuick(Appts.quick().filter(a=>a.id==='qn'||a.id==='qm'));Patients.get(1).appointments.length=0");
 
   // ───────── 11. seguridad ─────────
-  E(`quickAppts.length=0;quickAppts.push({id:'q1"><i id=PWN1>',ptName:${JSON.stringify(hostile)},phone:${JSON.stringify(hostile)},reason:${JSON.stringify(hostile)},notes:${JSON.stringify(hostile)},date:today(),time:'10:00',status:'pendiente',type:'quick'});Patients.get(1).appointments.push({id:5,reason:${JSON.stringify(hostile)},date:today(),time:'11:00',status:'pendiente',notes:${JSON.stringify(hostile)}});`);
+  E(`Appts.quick().length=0;Appts.quick().push({id:'q1"><i id=PWN1>',ptName:${JSON.stringify(hostile)},phone:${JSON.stringify(hostile)},reason:${JSON.stringify(hostile)},notes:${JSON.stringify(hostile)},date:today(),time:'10:00',status:'pendiente',type:'quick'});Patients.get(1).appointments.push({id:5,reason:${JSON.stringify(hostile)},date:today(),time:'11:00',status:'pendiente',notes:${JSON.stringify(hostile)}});`);
   ['month', 'week', 'list'].forEach(v => E(`Agenda.setView('${v}')`)); E("Agenda.setView('month')");
   check('SEGURIDAD: nombre, teléfono, motivo y notas con HTML se ven como texto en las 3 vistas y el panel (y el id hostil no rompe los atributos)', !D.getElementById('PWN') && !D.getElementById('PWN1') && main().includes(hostile));
   click($$('[data-action="agenda.openDetail"]').find(c => c.getAttribute('data-type') === 'quick')); check('SEGURIDAD: el detalle también', !D.getElementById('PWN') && !D.getElementById('PWN1') && modal().includes(hostile));
   click(act('app.closeModal', '.btn-sec')); E("Patients.select(1);Ficha.tab('citas')"); check('SEGURIDAD: la pestaña Citas de la ficha también', !D.getElementById('PWN') && main().includes(hostile));
-  E("quickAppts.length=0;Patients.get(1).appointments.length=0");
+  E("Appts.quick().length=0;Patients.get(1).appointments.length=0");
 
   // ───────── 12. WhatsApp ─────────
-  E(`Patients.get(1).phone='0991234567';Patients.get(1).appointments.push({id:9,reason:'Control',date:today(),time:'10:00',status:'pendiente'});quickAppts.push({id:'qw',ptName:'Sin Cel',phone:'',reason:'x',date:today(),time:'11:00',status:'pendiente',type:'quick'});Agenda.goToday()`);
+  E(`Patients.get(1).phone='0991234567';Patients.get(1).appointments.push({id:9,reason:'Control',date:today(),time:'10:00',status:'pendiente'});Appts.quick().push({id:'qw',ptName:'Sin Cel',phone:'',reason:'x',date:today(),time:'11:00',status:'pendiente',type:'quick'});Agenda.goToday()`);
   reset(); click($$('[data-action="agenda.sendWA"]')[0]);
   const u = opened[0] || ''; const msg = decodeURIComponent(u.split('text=')[1] || '');
   check('«Enviar recordatorio» abre wa.me con el 09… convertido a 593… y el mensaje con nombre, hora y motivo', u.indexOf('https://wa.me/593991234567?text=') === 0 && /María Pérez/.test(msg) && /10:00/.test(msg) && /Control/.test(msg) && !/{nombre}|{hora}/.test(msg), u.slice(0, 80));

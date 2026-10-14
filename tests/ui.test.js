@@ -10,7 +10,7 @@ const results = []; const check = (n, ok, extra = '') => { results.push(ok); con
 const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
 
 srv.listen(0, async () => {
-  console.log('\nOdontoApp — UI (navegación, dashboard, configuración, logo, servicios, medicamentos)');
+  console.log('\nOdontoApp — UI (navegación, dashboard, configuración, logo, Services.list(), medicamentos)');
   const errs = [], alerts = [], asked = [], opened = []; let confirmAnswer = true, popupBlocked = false;
   const vc = new VirtualConsole(); vc.on('jsdomError', e => { if (!/supabase|jsdelivr|googleapis|gstatic|Not implemented|serviceWorker/i.test(e.message)) errs.push(e.message.slice(0, 200)); });
   // abre una "ventana del navegador": idb = base propia (null = la compartida) · ls = datos previos de localStorage
@@ -56,7 +56,7 @@ srv.listen(0, async () => {
 
   // ───────── 3. dashboard ─────────
   const ym = TD.slice(0, 7), md = TD.slice(5);
-  E(`Patients.all().length=0;egresos.length=0;quickAppts.length=0;servicios.length=0;
+  E(`Patients.all().length=0;Finance.expenses().length=0;Appts.quick().length=0;Services.list().length=0;
    Patients.all().push(Patients.blank({id:1,name:'Ana Torres',cedula:'1712345678',birthdate:'1990-${md}',appointments:[
      {id:11,date:'${TD}',time:'15:00',reason:'Control',status:'pendiente'},
      {id:12,date:'${TD}',time:'08:30',reason:'Limpieza',status:'pendiente'},
@@ -67,8 +67,8 @@ srv.listen(0, async () => {
      payments:[{id:21,date:'${TD}',amount:100,concept:'Resina',factPendiente:true},{id:22,date:'${TD}',concept:'Sin monto'}]}),
    Patients.blank({id:2,name:'Beto Ruiz',birthdate:'1985-${md}'}));
    delete Patients.all()[1].appointments;delete Patients.all()[1].payments;
-   egresos.push({id:1,fecha:'${TD}',monto:30,categoria:'Luz'});
-   quickAppts.push({id:'q1',type:'quick',ptName:'Zoe Rápida',phone:'0987654321',reason:'Dolor',date:'${TD}',time:'12:00',status:'pendiente'},{id:'q2',type:'quick',ptName:'Hecha',reason:'x',date:'${TD}',time:'13:00',status:'completada'});`);
+   Finance.expenses().push({id:1,fecha:'${TD}',monto:30,categoria:'Luz'});
+   Appts.quick().push({id:'q1',type:'quick',ptName:'Zoe Rápida',phone:'0987654321',reason:'Dolor',date:'${TD}',time:'12:00',status:'pendiente'},{id:'q2',type:'quick',ptName:'Hecha',reason:'x',date:'${TD}',time:'13:00',status:'completada'});`);
   go('dashboard'); const dash = main(), dh = html();
   check('el dashboard se dibuja aunque haya una cita SIN hora, un pago sin monto y un paciente sin listas (ANTES podía romperse según el orden de las citas)', /Citas de hoy/.test(dash) && !errs.length, errs.join('|'));
   check('«Citas de hoy» muestra solo las pendientes (3 del paciente + 1 rápida); no la completada ni la que no asistió', /4 citas hoy/.test(dash) && /Control/.test(dash) && /Limpieza/.test(dash) && /Sin hora/.test(dash) && !/Ya atendida/.test(dash) && !/No vino/.test(dash));
@@ -82,7 +82,7 @@ srv.listen(0, async () => {
   check('el dashboard no usa onclick', !/\sonclick=/.test(dh));
   click(act('patients.select', '[data-id="1"]')); check('«Ver» abre la ficha del paciente', E('Patients.current() && Patients.current().id') === 1); go('dashboard');
   click(act('agenda.openDetail', '[data-id="q1"]')); check('«Ver cita» de una cita rápida abre su detalle', modalOpen() && /Zoe Rápida/.test(modal())); click(D.getElementById('modalOverlay'));
-  E(`Patients.all()[0].name=${JSON.stringify(hostile)};Patients.all()[0].payments[0].concept=${JSON.stringify(hostile)};Patients.all()[1].name=${JSON.stringify(hostile)};quickAppts[0].ptName=${JSON.stringify(hostile)};quickAppts[0].reason=${JSON.stringify(hostile)}`);
+  E(`Patients.all()[0].name=${JSON.stringify(hostile)};Patients.all()[0].payments[0].concept=${JSON.stringify(hostile)};Patients.all()[1].name=${JSON.stringify(hostile)};Appts.quick()[0].ptName=${JSON.stringify(hostile)};Appts.quick()[0].reason=${JSON.stringify(hostile)}`);
   go('dashboard'); check('SEGURIDAD: nombres, motivos y conceptos con HTML se ven como texto', !$('#PWN') && !$('[onerror]') && main().includes(hostile));
   E(`Patients.all()[0].name='Ana Torres';Patients.all()[1].name='Beto Ruiz'`);
   E(`Patients.all()[0].payments[0].amount='abc';Patients.all()[0].appointments[0].time=null;Patients.all()[0].appointments.push({id:99},{date:'${TD}'})`); go('dashboard'); check('datos corruptos (monto «abc», hora nula, citas vacías) no tumban la pantalla', /Citas de hoy/.test(main()) && !errs.length, errs.join('|'));
@@ -129,35 +129,35 @@ srv.listen(0, async () => {
   const w2 = await openApp(); check('el logo sobrevive en otro navegador (viene de la base)', /^data:image\/png/.test(w2.eval('logoImg') || '') && !!w2.document.querySelector('#logoIcon img') && w2.eval('clinicaRUC') === '1790012345001' && w2.eval('logoColor') === '#8b5cf6', w2.eval('logoColor') + w2.eval('clinicaRUC')); w2.close();
   click(act('settings.clearLogo')); check('«Quitar logo» vuelve al ícono por defecto', !E('logoImg') && !$('#logoIcon img') && !!$('#logoIcon svg'));
 
-  // ───────── 8. servicios ─────────
-  const svcs = () => E('servicios.map(s=>s.nombre+"|"+s.precio+"|"+s.categoria)');
-  reset(); click(act('settings.svcAdd')); check('servicio sin nombre: avisa', /nombre del servicio/.test(alerts[0] || '') && E('servicios.length') === 0);
-  reset(); setv('cfg_svcnombre', 'Limpieza'); setv('cfg_svcprecio', '-5'); click(act('settings.svcAdd')); check('precio negativo: error', /negativo/.test(alerts[0] || '') && E('servicios.length') === 0, alerts[0]);
-  check('precio «abc» (llegue por donde llegue): error (ANTES se guardaba como $0.00)', E("Services.check({nombre:'Limpieza',precio:'abc'}).ok") === false && /número válido/.test(E("Services.check({nombre:'Limpieza',precio:'abc'}).error")) && E("Services.check({nombre:'L',precio:'99999999'}).ok") === false && E('servicios.length') === 0);
+  // ───────── 8. Services.list() ─────────
+  const svcs = () => E('Services.list().map(s=>s.nombre+"|"+s.precio+"|"+s.categoria)');
+  reset(); click(act('settings.svcAdd')); check('servicio sin nombre: avisa', /nombre del servicio/.test(alerts[0] || '') && E('Services.list().length') === 0);
+  reset(); setv('cfg_svcnombre', 'Limpieza'); setv('cfg_svcprecio', '-5'); click(act('settings.svcAdd')); check('precio negativo: error', /negativo/.test(alerts[0] || '') && E('Services.list().length') === 0, alerts[0]);
+  check('precio «abc» (llegue por donde llegue): error (ANTES se guardaba como $0.00)', E("Services.check({nombre:'Limpieza',precio:'abc'}).ok") === false && /número válido/.test(E("Services.check({nombre:'Limpieza',precio:'abc'}).error")) && E("Services.check({nombre:'L',precio:'99999999'}).ok") === false && E('Services.list().length') === 0);
   reset(); setv('cfg_svcnombre', 'x'.repeat(81)); click(act('settings.svcAdd')); check('nombre de más de 80 letras: error', /demasiado largo/.test(alerts[0] || ''));
   reset(); setv('cfg_svcnombre', '  Limpieza   dental '); setv('cfg_svcprecio', '25.5'); setv('cfg_svccategoria', 'Prevención'); click(act('settings.svcAdd'));
-  check('servicio válido: se guarda limpio (espacios, decimales) con id', JSON.stringify(svcs()) === JSON.stringify(['Limpieza dental|25.5|Prevención']) && E('servicios[0].id') > 0 && alerts.length === 0 && asked.length === 0, JSON.stringify(svcs()));
+  check('servicio válido: se guarda limpio (espacios, decimales) con id', JSON.stringify(svcs()) === JSON.stringify(['Limpieza dental|25.5|Prevención']) && E('Services.list()[0].id') > 0 && alerts.length === 0 && asked.length === 0, JSON.stringify(svcs()));
   check('…aparece en la lista y los campos quedan vacíos para el siguiente', /Limpieza dental/.test(main()) && /\$25\.50/.test(main()) && D.getElementById('cfg_svcnombre').value === '');
-  reset(); confirmAnswer = false; setv('cfg_svcnombre', 'limpieza DENTAL'); setv('cfg_svcprecio', '30'); click(act('settings.svcAdd')); check('nombre repetido (sin importar mayúsculas): avisa; «no» no lo agrega', /Ya existe/.test(asked[0] || '') && E('servicios.length') === 1);
-  reset(); setv('cfg_svcnombre', 'limpieza DENTAL'); setv('cfg_svcprecio', '30'); click(act('settings.svcAdd')); check('…y «sí» lo agrega igual', E('servicios.length') === 2);
-  reset(); setv('cfg_svcnombre', 'Gratis'); setv('cfg_svcprecio', ''); confirmAnswer = false; click(act('settings.svcAdd')); check('precio vacío o $0: avisa antes de guardar', /\$0\.00/.test(asked[0] || '') && E('servicios.length') === 2);
-  reset(); setv('cfg_svcnombre', 'Resina'); setv('cfg_svcprecio', '40'); key('cfg_svcnombre', 'Enter'); check('Enter en el nombre agrega el servicio', E('servicios.length') === 3);
+  reset(); confirmAnswer = false; setv('cfg_svcnombre', 'limpieza DENTAL'); setv('cfg_svcprecio', '30'); click(act('settings.svcAdd')); check('nombre repetido (sin importar mayúsculas): avisa; «no» no lo agrega', /Ya existe/.test(asked[0] || '') && E('Services.list().length') === 1);
+  reset(); setv('cfg_svcnombre', 'limpieza DENTAL'); setv('cfg_svcprecio', '30'); click(act('settings.svcAdd')); check('…y «sí» lo agrega igual', E('Services.list().length') === 2);
+  reset(); setv('cfg_svcnombre', 'Gratis'); setv('cfg_svcprecio', ''); confirmAnswer = false; click(act('settings.svcAdd')); check('precio vacío o $0: avisa antes de guardar', /\$0\.00/.test(asked[0] || '') && E('Services.list().length') === 2);
+  reset(); setv('cfg_svcnombre', 'Resina'); setv('cfg_svcprecio', '40'); key('cfg_svcnombre', 'Enter'); check('Enter en el nombre agrega el servicio', E('Services.list().length') === 3);
   // los campos que ya estaban escritos en otra tarjeta no se pierden
   setv('cfg_ln', 'Nombre a medio escribir'); setv('cfg_svcnombre', 'Otro'); setv('cfg_svcprecio', '12'); click(act('settings.svcAdd'));
-  check('ANTES agregar un servicio borraba lo que estabas escribiendo en «Datos de la clínica»; ahora se conserva', D.getElementById('cfg_ln').value === 'Nombre a medio escribir' && E('servicios.length') === 4);
+  check('ANTES agregar un servicio borraba lo que estabas escribiendo en «Datos de la clínica»; ahora se conserva', D.getElementById('cfg_ln').value === 'Nombre a medio escribir' && E('Services.list().length') === 4);
   setv('cfg_ln', "Clínica O'Neil & Hijos");
-  const sid = E('servicios[0].id'); reset(); click(act('settings.svcEdit', `[data-id="${sid}"]`));
+  const sid = E('Services.list()[0].id'); reset(); click(act('settings.svcEdit', `[data-id="${sid}"]`));
   check('«Editar» abre el cuadro con los valores del servicio', modalOpen() && D.getElementById('f_esvnombre').value === 'Limpieza dental' && D.getElementById('f_esvprecio').value === '25.50' && D.getElementById('f_esvcategoria').value === 'Prevención');
   setv('f_esvnombre', ''); click(act('settings.svcSave')); check('guardar sin nombre: avisa y el cuadro sigue abierto', /nombre/.test(alerts[0] || '') && modalOpen());
   reset(); setv('f_esvnombre', 'Profilaxis'); setv('f_esvprecio', '35'); setv('f_esvcategoria', 'Periodoncia'); click(act('settings.svcSave'));
-  check('guardar cambios: se actualiza ESE servicio, el cuadro se cierra y la lista cambia', !modalOpen() && E('servicios[0].nombre') === 'Profilaxis' && E('servicios[0].precio') === 35 && E('servicios[0].categoria') === 'Periodoncia' && E('servicios[0].id') === sid && /Profilaxis/.test(main()));
-  reset(); E(`servicios[1].nombre=${JSON.stringify(hostile)};servicios[1].categoria=${JSON.stringify(hostile)}`); E('Settings.refresh()'); click(act('settings.svcEdit', `[data-id="${E('servicios[1].id')}"]`));
+  check('guardar cambios: se actualiza ESE servicio, el cuadro se cierra y la lista cambia', !modalOpen() && E('Services.list()[0].nombre') === 'Profilaxis' && E('Services.list()[0].precio') === 35 && E('Services.list()[0].categoria') === 'Periodoncia' && E('Services.list()[0].id') === sid && /Profilaxis/.test(main()));
+  reset(); E(`Services.list()[1].nombre=${JSON.stringify(hostile)};Services.list()[1].categoria=${JSON.stringify(hostile)}`); E('Settings.refresh()'); click(act('settings.svcEdit', `[data-id="${E('Services.list()[1].id')}"]`));
   check('SEGURIDAD: nombre y categoría con HTML se ven como texto en la lista y en el cuadro de edición', !$('#PWN') && !$('[onerror]') && main().includes(hostile) && D.getElementById('f_esvnombre').value === hostile); click(D.getElementById('modalOverlay'));
-  E("servicios[1].nombre='Resina grande';servicios[1].categoria='General'"); E('Settings.refresh()');
-  reset(); confirmAnswer = false; click(act('settings.svcDelete', `[data-id="${sid}"]`)); check('eliminar: el aviso nombra el servicio; «no» lo conserva', /Profilaxis/.test(asked[0] || '') && E('servicios.length') === 4);
-  reset(); const idxBefore = E('servicios.map(s=>s.id)'); click(act('settings.svcDelete', `[data-id="${sid}"]`)); check('«sí» elimina justo ese servicio (por id, no por posición)', E('servicios.length') === 3 && !E('servicios').some(s => s.id === sid));
-  // servicios antiguos sin id
-  E("servicios.forEach(s=>delete s.id)"); E('Settings.refresh()'); check('servicios antiguos sin id reciben uno y se pueden editar', E('servicios.every(s=>s.id!=null)') && !!act('settings.svcEdit'));
+  E("Services.list()[1].nombre='Resina grande';Services.list()[1].categoria='General'"); E('Settings.refresh()');
+  reset(); confirmAnswer = false; click(act('settings.svcDelete', `[data-id="${sid}"]`)); check('eliminar: el aviso nombra el servicio; «no» lo conserva', /Profilaxis/.test(asked[0] || '') && E('Services.list().length') === 4);
+  reset(); const idxBefore = E('Services.list().map(s=>s.id)'); click(act('settings.svcDelete', `[data-id="${sid}"]`)); check('«sí» elimina justo ese servicio (por id, no por posición)', E('Services.list().length') === 3 && !E('Services.list()').some(s => s.id === sid));
+  // Services.list() antiguos sin id
+  E("Services.list().forEach(s=>delete s.id)"); E('Settings.refresh()'); check('servicios antiguos sin id reciben uno y se pueden editar', E('Services.list().every(s=>s.id!=null)') && !!act('settings.svcEdit'));
 
   // ───────── 9. medicamentos ─────────
   const meds = () => E('MEDICAMENTOS_COMUNES.slice()');

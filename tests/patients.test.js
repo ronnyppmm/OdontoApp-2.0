@@ -143,7 +143,7 @@ srv.listen(0, async () => {
   const EVIL = '<img src=x onerror=window.__xss=1> O\'Brien "q"';
   seed([{ id: BIG, name: EVIL, cedula: '1712345678', phone: '0991-234-567', diary: [{ id: 1, title: EVIL, body: 'dolor' }, { id: 2, title: 'Nota sin cuerpo' }], treatments: [{ id: 1, name: 'Endodoncia ' + EVIL, cost: 50, status: 'pendiente', date: '2026-10-01' }], appointments: [{ id: 1, reason: 'Control ' + EVIL, date: '2026-10-05', time: '09:00', status: 'pendiente' }] },
     { id: BIG + 7, name: 'José Núñez', cedula: '0102030405', recetas: [{ id: 12, diagnostico: 'Caries', medico: 'Dra. Ríos', fecha: '2026-10-01' }] }]);
-  E("quickAppts=[{id:'q1',ptName:'Rápida <b>x</b>',reason:'limpieza',date:'2026-10-09',time:'10:00'}]");
+  E("Appts.setQuick([{id:'q1',ptName:'Rápida <b>x</b>',reason:'limpieza',date:'2026-10-09',time:'10:00'}])");
   check('la lista lateral con nombre hostil no inyecta elementos y el clic funciona', !$('#ptList img') && (click($(`#ptList [data-id="${BIG}"]`)), E('Patients.current().id') === BIG));
   type('globalSearch', 'img'); const box = $('#searchResults');
   check('SEGURIDAD: el buscador muestra los nombres/títulos como texto (antes inyectaba HTML)', box.classList.contains('open') && D.querySelectorAll('#searchResults [onerror]').length === 0 && D.querySelectorAll('#searchResults img').length === 0 && /<img src=x/.test(box.textContent));
@@ -168,15 +168,15 @@ srv.listen(0, async () => {
 
   // ───────── 11. cita rápida → paciente (agenda usa la API) ─────────
   seed([{ id: 5, name: 'Ya existe', cedula: '1111111111' }]);
-  E("quickAppts=[{id:'q9',ptName:'Rosa <i>Vera</i>',phone:'0988-111-222',reason:'Dolor',date:'2026-10-20',time:'11:00',status:'pendiente',notes:'n'}]; Agenda.openConvert('q9')");
+  E("Appts.setQuick([{id:'q9',ptName:'Rosa <i>Vera</i>',phone:'0988-111-222',reason:'Dolor',date:'2026-10-20',time:'11:00',status:'pendiente',notes:'n'}]); Agenda.openConvert('q9')");
   check('convertir cita rápida usa el formulario estándar, con nombre y teléfono precargados y escapados', D.getElementById('f_name').value === 'Rosa <i>Vera</i>' && D.getElementById('f_phone').value === '0988-111-222' && !D.querySelector('#modalContent i'));
   setv('f_ced', '1111111111'); confirmAnswer = false; click($('[data-action="agenda.confirmConvert"]'));
-  check('convertir con una cédula ya registrada pide confirmación; si dice "no", no crea ni borra la cita rápida', E('Patients.all().length') === 1 && E('quickAppts.length') === 1);
+  check('convertir con una cédula ya registrada pide confirmación; si dice "no", no crea ni borra la cita rápida', E('Patients.all().length') === 1 && E('Appts.quick().length') === 1);
   confirmAnswer = true; setv('f_ced', '2222222222'); click($('[data-action="agenda.confirmConvert"]'));
   const rosa = E("Patients.all().find(p=>p.cedula==='2222222222')");
-  check('al convertir: paciente creado con la cita asociada, cita rápida eliminada y ficha abierta', rosa && rosa.appointments.length === 1 && rosa.appointments[0].reason === 'Dolor' && E('quickAppts.length') === 0 && E('Patients.current().id') === rosa.id && Array.isArray(rosa.odoHistory));
-  alerts.length = 0; E("quickAppts=[{id:'q10',ptName:'X'}]; Agenda.openConvert('q10')"); setv('f_name', ''); click($('[data-action="agenda.confirmConvert"]'));
-  check('convertir sin nombre: aviso y la cita rápida se conserva', alerts.some(a => /nombre es obligatorio/i.test(a)) && E('quickAppts.length') === 1);
+  check('al convertir: paciente creado con la cita asociada, cita rápida eliminada y ficha abierta', rosa && rosa.appointments.length === 1 && rosa.appointments[0].reason === 'Dolor' && E('Appts.quick().length') === 0 && E('Patients.current().id') === rosa.id && Array.isArray(rosa.odoHistory));
+  alerts.length = 0; E("Appts.setQuick([{id:'q10',ptName:'X'}]); Agenda.openConvert('q10')"); setv('f_name', ''); click($('[data-action="agenda.confirmConvert"]'));
+  check('convertir sin nombre: aviso y la cita rápida se conserva', alerts.some(a => /nombre es obligatorio/i.test(a)) && E('Appts.quick().length') === 1);
   E('closeModal()');
 
   // ───────── 12. auditoría del PIN sigue funcionando por el camino nuevo ─────────
@@ -184,7 +184,7 @@ srv.listen(0, async () => {
   click($('#ptList [data-id="77"]')); click($('.sb-add')); fill({ name: 'Creada por clic' }); save1();
   click($('[data-action="patients.openDelete"]')); click($('[data-action="patients.confirmDelete"]')); await wait(100);
   await w.Seguridad._flush(); const log = (await E("idbGet('audit')")) || [];
-  check('el registro de actividad anota abrir, crear y eliminar hechos con clics (no solo por llamadas directas)', log.some(x => x.ev === 'Abrió ficha' && x.det === 'Ficha N° 77') && log.some(x => x.ev === 'Creó paciente' && /^Ficha N° \d+$/.test(x.det)) && !JSON.stringify(log).includes('Auditada') && !JSON.stringify(log).includes('Creada por clic') && log.some(x => x.ev === 'Eliminó paciente'), JSON.stringify(log.slice(-6)));
+  check('el registro de actividad anota abrir, crear y eliminar hechos con clics (no solo por llamadas directas)', log.some(x => x.ev === 'Abrió ficha' && x.det === 'Ficha N° ' + E('Patients.get(77).ficha')) && log.some(x => x.ev === 'Creó paciente' && /^Ficha N° \d+$/.test(x.det)) && !JSON.stringify(log).includes('Auditada') && !JSON.stringify(log).includes('Creada por clic') && log.some(x => x.ev === 'Eliminó paciente'), JSON.stringify(log.slice(-6)));
   alerts.length = 0; const nCreate = log.filter(x => x.ev === 'Creó paciente').length; click($('.sb-add')); fill({ name: '' }); save1(); await w.Seguridad._flush();
   check('un intento de crear con datos inválidos NO queda registrado como creación', ((await E("idbGet('audit')")) || []).filter(x => x.ev === 'Creó paciente').length === nCreate);
   E('closeModal()');
@@ -194,7 +194,7 @@ srv.listen(0, async () => {
   const n0 = ((await E("idbGet('audit')")) || []).filter(x => x.ev === 'Abrió ficha').length;
   click($('#ptList [data-id="301"]')); click($('#ptList [data-id="301"]')); click($('#ptList [data-id="302"]')); await w.Seguridad._flush();
   const ab = ((await E("idbGet('audit')")) || []).filter(x => x.ev === 'Abrió ficha').slice(n0);
-  check('auditoría: abrir el mismo paciente dos veces seguidas se anota una sola vez y siempre con el N.° de ficha', ab.length === 2 && ab[0].det === 'Ficha N° 301' && ab[1].det === 'Ficha N° 302', JSON.stringify(ab));
+  check('auditoría: abrir el mismo paciente dos veces seguidas se anota una sola vez y siempre con el N.° de ficha', ab.length === 2 && ab[0].det === 'Ficha N° ' + E('Patients.get(301).ficha') && ab[1].det === 'Ficha N° ' + E('Patients.get(302).ficha'), JSON.stringify(ab));
 
   check('sin errores de JavaScript durante toda la prueba', errs.length === 0, errs.join(' | '));
   w.close(); srv.close();

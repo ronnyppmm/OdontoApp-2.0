@@ -32,7 +32,7 @@ srv.listen(0, async () => {
   const hostile = '<img src=x onerror=1 id=PWN>';
 
   // pacientes de prueba
-  E(`Patients.all().length=0;quickAppts.length=0;servicios.length=0;servicios.push({id:1,nombre:"Resina 'A' & pulido",precio:35});
+  E(`Patients.all().length=0;Appts.quick().length=0;Services.list().length=0;Services.list().push({id:1,nombre:"Resina 'A' & pulido",precio:35});
      Patients.all().push(Patients.blank({id:1,name:'Ana Prueba',cedula:'1712345678',phone:'0991234567'}),Patients.blank({id:2,name:'Beto Segundo',cedula:'0912345678',phone:'0987654321'}));saveNow();Patients.renderList();Patients.select(1);`);
 
   // ───────── 1. estructura ─────────

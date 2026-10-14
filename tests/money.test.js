@@ -29,7 +29,7 @@ srv.listen(0, async () => {
   check('parseMonto rechaza: vacío, letras, negativos, más de 9.999.999,99, nulos', ['', 'abc', '-5', '10000000', null, undefined, '12..5', '1e3', '--'].every(x => Number.isNaN(P(x))), ['', 'abc', '-5', '10000000', null, '1e3'].map(P));
 
   // ── formularios reales ──
-  E("Patients.all().length=0; Patients.all().push({id:1,name:'Prueba',phone:'',treatments:[],payments:[],appointments:[],diary:[],images:[],consents:[],recetas:[],presupuestos:[],odoHistory:[]}); Patients.setCurrent(Patients.all()[0]); egresos.length=0;");
+  E("Patients.all().length=0; Patients.all().push({id:1,name:'Prueba',phone:'',treatments:[],payments:[],appointments:[],diary:[],images:[],consents:[],recetas:[],presupuestos:[],odoHistory:[]}); Patients.setCurrent(Patients.all()[0]); Finance.expenses().length=0;");
   setIn('f_pya', '12.345'); setIn('f_pyd', '2026-10-01'); setIn('f_pyt', 'Efectivo'); setIn('f_pyc', 'x');
   try { w.eval('Finance').savePay(); } catch (e) { errs.push('savePay: ' + e.message); }
   check('un pago escrito como 12.345 se guarda como 12.35', E('Patients.current().payments[0].amount') === 12.35, E('Patients.current().payments[0].amount'));
@@ -40,7 +40,7 @@ srv.listen(0, async () => {
   check('un pago negativo se rechaza con aviso (antes se ignoraba en silencio)', alerts.some(a => /inválido/i.test(a)) && E('Patients.current().payments.length') === 1);
   for (let i = 0; i < 3; i++) { setIn('f_ec', 'Gasto ' + i); setIn('f_em', '0.1'); setIn('f_ecat', 'Materiales'); setIn('f_ef', E('today()')); setIn('f_ep', ''); w.eval('Finance').saveExpense(); }
   alerts.length = 0; setIn('f_ec', 'Malo'); setIn('f_em', '0'); w.eval('Finance').saveExpense();
-  check('3 egresos de $0.10 suman exactamente $0.30 y un egreso en cero se rechaza con aviso', E('egresos.reduce((s,e)=>w_addM(s,e.monto),0)'.replace('w_addM', 'addM')) === 0.3 && E('egresos.length') === 3 && alerts.length === 1);
+  check('3 egresos de $0.10 suman exactamente $0.30 y un egreso en cero se rechaza con aviso', E('Finance.expenses().reduce((s,e)=>w_addM(s,e.monto),0)'.replace('w_addM', 'addM')) === 0.3 && E('Finance.expenses().length') === 3 && alerts.length === 1);
   E("showPage('estadisticas')"); await wait(150);
   const fin = D.getElementById('mainContent').textContent;
   check('Finanzas muestra $0.30 de egresos, sin decimales largos', /\$0\.30/.test(fin) && !/\d\.\d{3,}/.test(fin.replace(/\d{4}-\d{2}-\d{2}/g, '')), fin.match(/.{20}0\.[0-9]{3,}.{10}/)?.[0]);

@@ -52,6 +52,7 @@ const Ficha=(function(){
       '<div class="kpi"><div class="kpi-label">Pendientes</div><div class="kpi-val" style="color:var(--amber)">'+n('pendiente')+'</div></div>'+
       '<div class="kpi"><div class="kpi-label">Saldo pendiente</div><div class="kpi-val" style="color:'+(deuda>0?'var(--red)':'var(--green)')+'">'+money(deuda)+'</div>'+subSaldoHtml(cta)+'</div></div>'+
       '<div class="card"><div class="card-title">Información personal</div><div class="grid2">'+
+        '<div><div class="fl">N° de ficha</div><div class="fv">'+esc(Patients.fichaOf(p)==null?'—':Patients.fichaOf(p))+'</div></div>'+
         '<div><div class="fl">Nombre completo</div><div class="fv">'+esc(p.name)+'</div></div>'+
         '<div><div class="fl">Cédula / ID</div><div class="fv">'+esc(p.cedula)+'</div></div>'+
         '<div><div class="fl">Edad</div><div class="fv">'+esc(age)+(typeof age==='number'?' años':'')+'</div></div>'+
@@ -566,8 +567,8 @@ const Treatments=(function(){
   }
   function openAdd(){
     if(!Patients.current())return;
-    var svc=(servicios||[]).length?'<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">⚡ Seleccionar del catálogo</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+
-      servicios.map(function(s){return '<button class="svc-chip" data-action="treatments.pickService" data-nombre="'+esc(s.nombre)+'" data-precio="'+esc(s.precio)+'">'+esc(s.nombre)+' <span style="font-weight:700;color:var(--green)">'+money(s.precio)+'</span></button>';}).join('')+
+    var svc=(Services.list()||[]).length?'<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">⚡ Seleccionar del catálogo</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+
+      Services.list().map(function(s){return '<button class="svc-chip" data-action="treatments.pickService" data-nombre="'+esc(s.nombre)+'" data-precio="'+esc(s.precio)+'">'+esc(s.nombre)+' <span style="font-weight:700;color:var(--green)">'+money(s.precio)+'</span></button>';}).join('')+
       '</div><div style="border-top:1px solid var(--border);margin:12px 0 10px"></div></div>':'';
     openModal('<div class="modal-title">Agregar tratamiento</div>'+svc+
       '<div class="form-row form-full"><div class="form-group"><label>Tratamiento *</label><input id="f_txn" placeholder="Obturación resina, Extracción, Endodoncia, Corona..." data-on-input="treatments.preview"></div></div>'+
@@ -707,7 +708,7 @@ const Treatments=(function(){
   function priceOf(s){return s?(Number(s.precio)||0).toFixed(2):'';}
   function openSuggestFromOdonto(tooth,odoId){
     var info=TX_FOR[odoId];if(!info||!Patients.current())return;
-    var svc=(servicios||[]).find(function(s){return String(s.nombre).toLowerCase().indexOf(info.name.toLowerCase())>-1;});
+    var svc=(Services.list()||[]).find(function(s){return String(s.nombre).toLowerCase().indexOf(info.name.toLowerCase())>-1;});
     openModal(suggestForm('Tratamiento sugerido','background:#dbeafe;border:1px solid #93c5fd;color:#1e40af',
       'Marcaste <strong>"'+esc(O.wholeLabel(odoId))+'"</strong> en el diente <strong>'+esc(tooth)+'</strong>. ¿Registrar el tratamiento <strong>'+esc(info.name)+'</strong> como <strong>'+esc(info.status)+'</strong>?',
       svc?svc.nombre:info.name,priceOf(svc),'<div style="font-size:11px;color:var(--text3);margin-bottom:10px">🦷 Diente: <b>'+esc(tooth)+'</b> · El tratamiento quedará vinculado al símbolo del odontograma.</div>',
@@ -725,7 +726,7 @@ const Treatments=(function(){
   }
   function openSuggestFromCaries(tooth,zone){
     if(!Patients.current())return;
-    var svc=(servicios||[]).find(function(s){return /obturaci|resina/i.test(s.nombre);});
+    var svc=(Services.list()||[]).find(function(s){return /obturaci|resina/i.test(s.nombre);});
     openModal(suggestForm('Tratamiento sugerido','background:#f0e7d8;border:1px solid #dcc39c;color:#6b4a2f',
       'Se marcó <strong>caries</strong> en el diente <strong>'+esc(tooth)+'</strong> ('+esc(O.zoneNamesFor(tooth)[zone])+'). ¿Registrar el tratamiento pendiente correspondiente?',
       svc?svc.nombre:'Obturación resina',priceOf(svc),svc?'<div style="font-size:11px;color:var(--text3);margin-bottom:10px">⚡ Precio tomado del catálogo de servicios.</div>':'',

@@ -41,6 +41,28 @@ srv.listen(0, async () => {
   const left = ALIAS.filter(n => E(`typeof ${n}`) !== 'undefined');
   check('ninguno de los ' + ALIAS.length + ' alias antiguos existe ya como global', left.length === 0, left.join());
   check('lo que SÍ queda global es el armazón: showPage, openModal, closeModal, renderConfiguracion, save, esc…', ['showPage', 'openModal', 'closeModal', 'renderConfiguracion', 'save', 'esc', 'uid', 'today'].every(n => E(`typeof ${n}`) === 'function'));
+  // 5b. listas privadas
+  const LISTAS = ['egresos', 'facturas', 'quickAppts', 'archivosContables', 'servicios'];
+  const glob = LISTAS.filter(n => E(`typeof ${n}`) !== 'undefined' || (n in w));
+  check('las 5 listas (egresos, facturas, quickAppts, archivosContables, servicios) NO son globales', glob.length === 0, glob.join());
+  const owner = { egresos: 'finance.js', facturas: 'finance.js', archivosContables: 'finance.js', servicios: 'ui.js', quickAppts: 'agenda.js' };
+  const fuera = [];
+  for (const f of fs.readdirSync(path.join(ROOT, 'js')).filter(x => x.endsWith('.js'))) {
+    const src = fs.readFileSync(path.join(ROOT, 'js', f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
+    const KW = /^(return|in|of|new|typeof|else|case|await|void|delete|throw|yield|do|var|let|const)$/;
+    for (const n of LISTAS) if (owner[n] !== f) { const re = new RegExp('(^|[^\\w.$\'"])' + n + '(?![\\w:\'"])(?!\\s*:)', 'gm'); let m; while ((m = re.exec(src))) { const t = /([A-Za-zñáéíóú,]+) $/.exec(src.slice(Math.max(0, m.index - 24), m.index + m[1].length)); if (t && !KW.test(t[1])) continue; /* texto visible, no código */ fuera.push(f + ':' + n); break; } }
+  }
+  check('ningún módulo usa esas listas fuera de su dueño (solo por accesores)', fuera.length === 0, fuera.join());
+  // 5c. el texto que ve el usuario no contiene llamadas a la API (error de migración automática: «Facturas y Finance.expenses()»)
+  const raros = [];
+  for (const f of fs.readdirSync(path.join(ROOT, 'js')).filter(x => x.endsWith('.js'))) {
+    fs.readFileSync(path.join(ROOT, 'js', f), 'utf8').split('\n').forEach((ln, i) => {
+      if (/^\s*(\/\/|\*)/.test(ln)) return;
+      const re = /([A-Za-zñáéíóú]+) (Finance\.[a-z]+\(\)|Patients\.all\(\)|Services\.list\(\)|Appts\.quick\(\)|Backup\.[a-z]+\(\))( [a-zñáéíóú]|[,:;)]|\.(?![a-zA-Z]))/g; let m;
+      while ((m = re.exec(ln))) if (!/^(return|in|of|new|typeof|else|case|await|void|delete|throw|yield|do)$/.test(m[1])) raros.push(f + ':' + (i + 1) + ' «' + m[0] + '»');
+    });
+  }
+  check('ningún texto visible contiene nombres de API («Services.list()», «Finance.expenses()»…)', raros.length === 0, raros.join(' | '));
   // 6. API de estado
   E("Patients.setAll([{id:1,name:'A'},{id:2,name:'B'}])");
   check('setAll reemplaza la lista y all() la devuelve', E('Patients.all().length') === 2 && E('Patients.all()[1].name') === 'B');

@@ -12,7 +12,7 @@ var CHILD_REV={};Object.keys(CHILD).forEach(function(k){CHILD_REV[CHILD[k]]=k;})
 var SID_KINDS={receta:1,presup:1};            // su "id" es el N° visible y puede repetirse entre dispositivos → clave propia (sid)
 var TOP_KINDS={egresos:'egreso',facturas:'factura',servicios:'servicio',archivosContables:'archivo',quickAppts:'qappt'};
 var TOP_REV={};Object.keys(TOP_KINDS).forEach(function(k){TOP_REV[TOP_KINDS[k]]=k;});
-function topArr(name){return name==='egresos'?egresos:name==='facturas'?facturas:name==='servicios'?servicios:name==='archivosContables'?archivosContables:quickAppts;}
+function topArr(name){return name==='egresos'?Finance.expenses():name==='facturas'?Finance.invoices():name==='servicios'?Services.list():name==='archivosContables'?Finance.archives():Appts.quick();}
 
 var cfg={url:'',key:'',clinicUuid:'',email:''},meta=null,running=null,timer=null,retryMs=0,pendingAgain=false;
 var lastError='',pendingCount=0,guardInfo=null,needLogin=false,lastSyncAt=0,applying=false,state='idle',listenersOn=false;
@@ -270,6 +270,7 @@ async function pull(){
     }
     if(changed)saveNow();
   }finally{applying=false;}
+  try{if(Patients.assignFichas()>0)save();}catch(e){}   // dos dispositivos pudieron crear la misma ficha sin conexión
   if(meta.needFull&&!orphans.length){meta.cursor=null;meta.needFull=false;}
   if(writes.length)await sdbPut(writes);
   return {changed:changed,conflicts:conflicts.length,total:list.length};
@@ -450,11 +451,11 @@ async function connect(f,say){
     if(remoteN>0&&localN>0){
       var combine=confirm('La nube ya tiene '+remoteN+' paciente(s) y este dispositivo tiene '+localN+'.\n\nAceptar = COMBINAR ambos (se conserva todo; si algo choca, gana lo de la nube y queda anotado).\nCancelar = otras opciones.');
       if(!combine){
-        if(confirm('¿Reemplazar los datos de ESTE dispositivo por los de la nube?\n\n⚠️ Lo que solo exista aquí se perderá.')){Patients.setAll([]);egresos=[];facturas=[];quickAppts=[];archivosContables=[];}
+        if(confirm('¿Reemplazar los datos de ESTE dispositivo por los de la nube?\n\n⚠️ Lo que solo exista aquí se perderá.')){Patients.setAll([]);Finance.setExpenses([]);Finance.setInvoices([]);Appts.setQuick([]);Finance.setArchives([]);}
         else throw new Error('Conexión cancelada. No se cambió nada.');
       }
     }
-    if(remoteN>0){Patients.setAll(Patients.all().filter(function(p){return !p.demo;}));egresos=egresos.filter(function(e){return !e.demo;});}   // la nube ya tiene datos reales: fuera los de ejemplo
+    if(remoteN>0){Patients.setAll(Patients.all().filter(function(p){return !p.demo;}));Finance.setExpenses(Finance.expenses().filter(function(e){return !e.demo;}));}   // la nube ya tiene datos reales: fuera los de ejemplo
     // todo salió bien: recién ahora se adopta la nueva conexión
     cfg.clinicUuid=cid;cfg.email=k.mail;if(!sbClinicaId)sbClinicaId=cid;
     meta=newMetaObj;needLogin=false;
@@ -485,7 +486,7 @@ async function disconnect(){
   await sdbClear();setStatus('idle');
 }
 async function recoverFromCloud(){
-  Patients.setAll([]);egresos=[];facturas=[];quickAppts=[];archivosContables=[];servicios=servicios||[];
+  Patients.setAll([]);Finance.setExpenses([]);Finance.setInvoices([]);Appts.setQuick([]);Finance.setArchives([]);
   meta=newMeta(cfg.clinicUuid);await sdbClear();await saveMeta();audit('Nube: recuperó todo desde la nube','');
   applying=true;try{saveNow();}finally{applying=false;}
   guardInfo=null;await syncNow();refrescarVista();

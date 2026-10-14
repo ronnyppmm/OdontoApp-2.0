@@ -8,6 +8,8 @@
 /* ═══════════════════════════ CITAS (datos) ═══════════════════════════ */
 const Appts=(function(){
   'use strict';
+  var quickAppts=[];   // ESTADO PRIVADO (citas rápidas): se lee con quick() (la misma lista) y se reemplaza con setQuick(lista)
+  function setQuick(l){quickAppts=Array.isArray(l)?l:[];return quickAppts;}
   var STATUS={pendiente:'Pendiente',completada:'Completada',no_asistio:'No asistió'};
   var S=function(x){return x==null?'':String(x);};
   var TIME_RE=/^([01]\d|2[0-3]):[0-5]\d$/;
@@ -129,7 +131,7 @@ const Appts=(function(){
     return {ok:true,url:'https://wa.me/'+n.number+'?text='+encodeURIComponent(waMessage(appt,name))};
   }
 
-  return {STATUS:STATUS,all:all,sortByTime:sortByTime,phoneOf:phoneOf,find:find,describe:describe,conflicts:conflicts,check:check,
+  return {STATUS:STATUS,quick:function(){return quick();},setQuick:setQuick,all:all,sortByTime:sortByTime,phoneOf:phoneOf,find:find,describe:describe,conflicts:conflicts,check:check,
     addToPatient:addToPatient,addQuick:addQuick,update:update,setStatus:setStatus,remove:remove,markReminder:markReminder,adoptLegacy:adoptLegacy,
     defaultWAMsg:defaultWAMsg,waMessage:waMessage,waNumber:waNumber,waLink:waLink};
 })();

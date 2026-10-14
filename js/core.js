@@ -103,7 +103,7 @@ const now=new Date();
 return FRASES_DIA[Math.floor((now-new Date(now.getFullYear(),0,0))/864e5)%FRASES_DIA.length];
 }
 const MONTHS_FULL=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-let egresos=[],facturas=[],quickAppts=[],archivosContables=[],servicios=[],curTab='datos',curPage='dashboard';
+let curTab='datos',curPage='dashboard';
 let nextId=1,nextEgId=1,nextFactId=1,nextRecetaId=1,nextPresupId=1,logoColor='#2f9d94',logoImg=null;
 let clinicaRUC='',clinicaDireccion='',clinicaTelefono='';
 
@@ -166,22 +166,22 @@ rq.onsuccess=()=>res(rq.result);rq.onerror=()=>res(undefined);
 }
 function saveNow(){
 _savePending=false;
-const bundle={v:DATA_VERSION,t:Date.now(),patients:Patients.all(),egresos,facturas,archivosContables,servicios,quickAppts,meds:MEDICAMENTOS_COMUNES,
+const bundle={v:DATA_VERSION,t:Date.now(),patients:Patients.all(),egresos:Finance.expenses(),facturas:Finance.invoices(),archivosContables:Finance.archives(),servicios:Services.list(),quickAppts:Appts.quick(),meds:MEDICAMENTOS_COMUNES,
 nextId,nextEgId,nextFactId,nextRecetaId,nextPresupId,
 logo:{text:document.getElementById('logoText').textContent,prof:document.getElementById('logoProfesional').textContent,color:logoColor,img:logoImg,ruc:clinicaRUC,dir:clinicaDireccion,tel:clinicaTelefono}};
 idbSet('state',bundle); // ← la "base de datos grande"
 try{ // espejo localStorage (compatibilidad); si no cabe, no rompe nada
 localStorage.setItem('oa3_pts',JSON.stringify(Patients.all()));
-localStorage.setItem('oa3_eg',JSON.stringify(egresos));
-localStorage.setItem('oa3_fact',JSON.stringify(facturas));
+localStorage.setItem('oa3_eg',JSON.stringify(Finance.expenses()));
+localStorage.setItem('oa3_fact',JSON.stringify(Finance.invoices()));
 localStorage.setItem('oa3_nid',nextId);
 localStorage.setItem('oa3_neg',nextEgId);
 localStorage.setItem('oa3_nfact',nextFactId);
 localStorage.setItem('oa3_nreceta',nextRecetaId);
 localStorage.setItem('oa3_npresup',nextPresupId);
 localStorage.setItem('oa3_logo',JSON.stringify(bundle.logo));
-localStorage.setItem('oa3_arch',JSON.stringify(archivosContables));
-localStorage.setItem('oa3_svc',JSON.stringify(servicios));
+localStorage.setItem('oa3_arch',JSON.stringify(Finance.archives()));
+localStorage.setItem('oa3_svc',JSON.stringify(Services.list()));
 localStorage.setItem('oa3_meta',JSON.stringify({t:bundle.t,bytes:new Blob([JSON.stringify(bundle)]).size}));
 }catch(e){console.warn('localStorage lleno: los datos viven en IndexedDB');}
 sbAutoSync();
@@ -209,9 +209,9 @@ idbSet('state',b);
 }
 if(b){
 b=migrateBundle(b);
-Patients.setAll(b.patients||[]);egresos=b.egresos||[];facturas=b.facturas||[];
-archivosContables=b.archivosContables||[];servicios=b.servicios||[];
-quickAppts=Array.isArray(b.quickAppts)?b.quickAppts:[];
+Patients.setAll(b.patients||[]);Finance.setExpenses(b.egresos);Finance.setInvoices(b.facturas);
+Finance.setArchives(b.archivosContables);Services.setAll(b.servicios);
+Appts.setQuick(b.quickAppts);
 if(Array.isArray(b.meds)&&b.meds.length)MEDICAMENTOS_COMUNES=b.meds.filter(m=>typeof m==='string');
 nextId=b.nextId||nextId;nextEgId=b.nextEgId||nextEgId;nextFactId=b.nextFactId||nextFactId;
 nextRecetaId=b.nextRecetaId||nextRecetaId;nextPresupId=b.nextPresupId||nextPresupId;
@@ -246,11 +246,11 @@ function seedDemo(){
      payments:[{id:1,concept:'Limpieza dental',date:'2024-12-01',amount:30,type:'Transferencia'}],
      appointments:[{id:1,date:today(),time:'09:00',reason:'Revisión general',status:'pendiente'}]}
   ]);
-  egresos=[
+  Finance.setExpenses([
     {demo:true,id:nextEgId++,concepto:'Materiales dentales',categoria:'Materiales',monto:120,fecha:'2025-03-01',proveedor:'DentalPro'},
     {demo:true,id:nextEgId++,concepto:'Arriendo local',categoria:'Arriendo',monto:350,fecha:'2025-03-01',proveedor:'Propietario'},
     {demo:true,id:nextEgId++,concepto:'Servicios básicos',categoria:'Servicios',monto:45,fecha:'2025-03-05',proveedor:'CNT / Eléctrica'},
-  ];
+  ]);
   save();
 }
 
@@ -277,9 +277,8 @@ function factoryReset(){
   if(!confirm('Segunda confirmación requerida.\n\n¿Confirmas que deseas borrar todos los datos y volver a los valores de fábrica?'))return;
   // Clear all localStorage keys used by the app
   ['oa3_pts','oa3_eg','oa3_fact','oa3_nid','oa3_neg','oa3_nfact','oa3_nreceta','oa3_logo','oa3_meds','oa3_qa','oa3_qa_ok','oa3_arch','oa3_svc'].forEach(k=>localStorage.removeItem(k));
-  servicios=[];
   // Reset state
-  Patients.setAll([]);egresos=[];facturas=[];quickAppts=[];
+  Patients.setAll([]);Finance.setExpenses([]);Finance.setInvoices([]);Finance.setArchives([]);Services.setAll([]);Appts.setQuick([]);
   nextId=1;nextEgId=1;nextFactId=1;nextRecetaId=1;
   logoColor='#2f9d94';logoImg=null;
   clinicaRUC='';clinicaDireccion='';clinicaTelefono='';
@@ -343,9 +342,9 @@ function buildPayload(){
         ruc:clinicaRUC, direccion:clinicaDireccion, telefono:clinicaTelefono,
         logoColor, logoImg
       },
-      patients:Patients.all(), egresos, facturas, servicios, archivosContables, quickAppts,
+      patients:Patients.all(), egresos:Finance.expenses(), facturas:Finance.invoices(), servicios:Services.list(), archivosContables:Finance.archives(), quickAppts:Appts.quick(),
 nextId, nextEgId, nextFactId, nextRecetaId, nextPresupId,
-servicios, archivosContables, quickAppts, nextPresupId, meds: MEDICAMENTOS_COMUNES
+meds: MEDICAMENTOS_COMUNES
     },
     updated_at: new Date().toISOString()
   };

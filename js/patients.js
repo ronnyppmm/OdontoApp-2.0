@@ -13,7 +13,36 @@ const Patients=(function(){
 
   /* ── datos (ESTADO PRIVADO del módulo: el resto de la app usa all/current/setAll/setCurrent) ── */
   var patients=[],curPt=null;
-  function setAll(list){patients=Array.isArray(list)?list:[];if(curPt&&patients.indexOf(curPt)<0)curPt=null;return patients;}
+  function setAll(list){
+    patients=Array.isArray(list)?list:[];if(curPt&&patients.indexOf(curPt)<0)curPt=null;
+    if(assignFichas()>0&&typeof save==='function')save();   // pacientes antiguos o importados sin número de ficha
+    return patients;
+  }
+  /* ── N.° DE FICHA: número corto y secuencial (1, 2, 3…) que identifica al paciente. Es lo ÚNICO que el registro de actividad anota de él. ──
+     • Un paciente nuevo recibe el siguiente número (nunca se reutiliza el de uno eliminado: el registro seguiría apuntando a otra persona).
+     • Pacientes antiguos: si su id es pequeño lo conservan como ficha; si no, reciben el siguiente número libre, por orden de creación.
+     • Si dos dispositivos crean la misma ficha sin conexión, al sincronizar se conserva la del paciente más antiguo y la otra recibe un número nuevo
+       (el cálculo es el mismo en todos los dispositivos, por eso convergen). */
+  var MAXF=1e9;
+  function okF(f){return typeof f==='number'&&isFinite(f)&&f>0&&f<MAXF&&Math.floor(f)===f;}
+  function idNum(p){var n=Number(p.id);return isFinite(n)?n:Infinity;}
+  function maxFicha(){var m=0;patients.forEach(function(p){if(p&&okF(p.ficha)&&p.ficha>m)m=p.ficha;});return m;}
+  function nextFicha(){var f=Math.max(Math.floor(+nextId||1),maxFicha()+1);nextId=f+1;return f;}
+  function assignFichas(){
+    var list=patients.filter(function(p){return p&&typeof p==='object';}).sort(function(a,b){var x=idNum(a),y=idNum(b);return x!==y?(x<y?-1:1):(String(a.id)<String(b.id)?-1:1);});
+    var used={},max=0,changed=0,pend=[];
+    list.forEach(function(p){if(okF(p.ficha)&&!used[p.ficha]){used[p.ficha]=1;if(p.ficha>max)max=p.ficha;}else pend.push(p);});
+    pend.forEach(function(p){
+      var id=Number(p.id),f;
+      if(okF(id)&&!used[id])f=id;
+      else{f=Math.max(max,Math.floor(+nextId||1)-1)+1;while(used[f])f++;}
+      p.ficha=f;used[f]=1;if(f>max)max=f;changed++;
+    });
+    if(max>=(+nextId||1))nextId=max+1;
+    return changed;
+  }
+  function fichaOf(p){return p&&okF(p.ficha)?p.ficha:null;}
+  function byFicha(n){n=Number(n);for(var i=0;i<patients.length;i++){if(patients[i]&&patients[i].ficha===n)return patients[i];}return null;}
   function setCurrent(p){curPt=p||null;return curPt;}
   function all(){return patients;}
   function get(id){for(var i=0;i<patients.length;i++){if(String(patients[i].id)===String(id))return patients[i];}return null;}
@@ -21,6 +50,7 @@ const Patients=(function(){
   function blank(f){
     var p={id:uid(),name:'',cedula:'',birthdate:'',phone:'',email:'',alergias:'',antecedentes:'',surfData:{},wholeData:{}};
     Object.assign(p,f||{});
+    if(!okF(p.ficha))p.ficha=nextFicha();
     ARRAYS.forEach(function(k){if(!Array.isArray(p[k]))p[k]=[];});
     return p;
   }
@@ -65,13 +95,15 @@ const Patients=(function(){
     '<div class="form-row form-full"><div class="form-group"><label>Alergias</label><input id="f_al" value="'+val('alergias')+'" placeholder="Penicilina, látex..."></div></div>'+
     '<div class="form-row form-full"><div class="form-group"><label>Antecedentes médicos</label><textarea id="f_ant">'+val('antecedentes')+'</textarea></div></div>';
   }
+  /* «12», «#12», «ficha 12» o «N° 12» encuentran la ficha número 12 */
+  function fichaMatch(p,q){var m=/^\s*(?:ficha\s*)?(?:n\s*[°º]?\s*)?#?\s*(\d{1,9})\s*$/i.exec(String(q||''));return !!m&&p.ficha===Number(m[1]);}
   function renderList(){
     var box=$('ptList');if(!box)return;
     var inp=$('searchInput'),q=norm(inp?inp.value:'');
-    box.innerHTML=patients.filter(function(p){return !q||norm(p.name).indexOf(q)>-1||norm(p.cedula).indexOf(q)>-1;}).map(function(p){
+    box.innerHTML=patients.filter(function(p){return !q||norm(p.name).indexOf(q)>-1||norm(p.cedula).indexOf(q)>-1||fichaMatch(p,inp.value);}).map(function(p){
       return '<div class="sb-pt'+(curPt&&curPt.id===p.id?' active':'')+'" data-action="patients.select" data-id="'+esc(p.id)+'">'+
       '<div class="sb-av" style="background:'+ptColor(p.id)+'">'+esc(initials(p.name||'?'))+'</div>'+
-      '<div><div class="sb-pt-name">'+esc(p.name)+'</div><div class="sb-pt-meta">'+calcAge(p.birthdate)+' años</div></div></div>';
+      '<div><div class="sb-pt-name">'+esc(p.name)+'</div><div class="sb-pt-meta">'+(fichaOf(p)?'N° '+esc(fichaOf(p))+' · ':'')+calcAge(p.birthdate)+' años</div></div></div>';
     }).join('');
   }
   function badge(tip,label){return '<button class="ptw-alert-btn amber" data-on-mouseover="patients.alertTip" data-on-mouseout="patients.hideAlertTip" data-tip="'+tip+'">'+label+'</button>';}
@@ -81,7 +113,7 @@ const Patients=(function(){
     var badges=(alergia?badge('alergia','⚠️ ALERGIA'):'')+(antec?badge('antec','🩺 ANTECEDENTES'):'');
     var btn=function(act,title,icon,extra){return '<button class="ptw-btn" title="'+title+'" aria-label="'+title+'" data-action="'+act+'"'+(extra||'')+'>'+icon+'</button>';};
     el.innerHTML='<div class="ptw-card"><div class="ptw-info"><div class="ptw-av">'+esc(initials(p.name||'?'))+'</div><div style="min-width:0">'+
-      '<div class="ptw-name">'+esc(p.name)+'</div><div class="ptw-meta"><span>🪪 '+esc(p.cedula||'Sin cédula')+'</span><span>·</span><span>📞 '+esc(p.phone||'Sin teléfono')+'</span><span>·</span><span>🎂 '+(p.birthdate?calcAge(p.birthdate):'—')+' años</span></div></div></div>'+
+      '<div class="ptw-name">'+esc(p.name)+'</div><div class="ptw-meta"><span>📁 N° '+esc(fichaOf(p)==null?'—':fichaOf(p))+'</span><span>·</span><span>🪪 '+esc(p.cedula||'Sin cédula')+'</span><span>·</span><span>📞 '+esc(p.phone||'Sin teléfono')+'</span><span>·</span><span>🎂 '+(p.birthdate?calcAge(p.birthdate):'—')+' años</span></div></div></div>'+
       (badges?'<div class="ptw-alerts-inline">'+badges+'</div>':'')+
       '<div class="ptw-actions">'+btn('patients.openEdit','Editar','✏️')+btn('ptw.addAppt','Cita','📅')+btn('ptw.addPay','Pago','💳')+btn('ptw.addReceta','Receta','💊')+
       btn('patients.openDelete','Eliminar','🗑️')+btn('app.showPage','Cerrar','✕',' data-page="dashboard"')+'</div></div>';
@@ -154,7 +186,7 @@ const Patients=(function(){
   }
   function hideAlertTip(){var tip=$('ptAlertTip');if(tip)tip.style.display='none';}
 
-  var api={all:all,setAll:setAll,setCurrent:setCurrent,get:get,current:current,blank:blank,check:check,readForm:readForm,add:add,update:update,remove:remove,addFromForm:addFromForm,
+  var api={all:all,setAll:setAll,assignFichas:assignFichas,nextFicha:nextFicha,fichaOf:fichaOf,byFicha:byFicha,fichaMatch:fichaMatch,setCurrent:setCurrent,get:get,current:current,blank:blank,check:check,readForm:readForm,add:add,update:update,remove:remove,addFromForm:addFromForm,
     formHtml:formHtml,renderList:renderList,select:select,openNew:openNew,saveNew:saveNew,openEdit:openEdit,saveEdit:saveEdit,openDelete:openDelete,confirmDelete:confirmDelete,
     alertTip:alertTip,hideAlertTip:hideAlertTip,esNegativo:esNegativo,norm:norm,ARRAYS:ARRAYS};
   return api;
@@ -174,8 +206,8 @@ const Search=(function(){
     var nq=norm(q),dq=nq.replace(/\D/g,''),res=[];
     Patients.all().forEach(function(p){
       var name=esc(p.name);
-      if(norm(p.name).indexOf(nq)>-1||norm(p.cedula).indexOf(nq)>-1||norm(p.phone).indexOf(nq)>-1||(dq.length>=3&&String(p.phone||'').replace(/\D/g,'').indexOf(dq)>-1)){
-        res.push({type:'patient',icon:'👤',iconBg:'#dbeafe',label:name,sub:'CI: '+esc(p.cedula||'—')+' · '+calcAge(p.birthdate)+' años · '+esc(p.phone||'sin teléfono'),action:openAt(p.id)});
+      if(norm(p.name).indexOf(nq)>-1||norm(p.cedula).indexOf(nq)>-1||norm(p.phone).indexOf(nq)>-1||Patients.fichaMatch(p,q)||(dq.length>=3&&String(p.phone||'').replace(/\D/g,'').indexOf(dq)>-1)){
+        res.push({type:'patient',icon:'👤',iconBg:'#dbeafe',label:name,sub:(Patients.fichaOf(p)?'Ficha N° '+esc(Patients.fichaOf(p))+' · ':'')+'CI: '+esc(p.cedula||'—')+' · '+calcAge(p.birthdate)+' años · '+esc(p.phone||'sin teléfono'),action:openAt(p.id)});
       }
       (p.diary||[]).forEach(function(n){
         if(norm(n.title).indexOf(nq)>-1||norm(n.body).indexOf(nq)>-1)
@@ -194,7 +226,7 @@ const Search=(function(){
           res.push({type:'rx',icon:'💊',iconBg:'#fce7f3',label:'Receta N° '+String(r.id).padStart(6,'0'),sub:name+' · '+fmtDate(r.fecha)+' · '+esc(r.diagnostico||''),action:openAt(p.id,'recetas')});
       });
     });
-    (quickAppts||[]).forEach(function(a){
+    (Appts.quick()||[]).forEach(function(a){
       if(norm(a.ptName).indexOf(nq)>-1||norm(a.reason).indexOf(nq)>-1)
         res.push({type:'appt',icon:'📅',iconBg:'#f0e7d8',label:esc(a.ptName),sub:'Cita rápida · '+fmtDate(a.date)+' '+esc(a.time||'')+' · '+esc(a.reason||''),action:function(){showPage('agenda');}});
     });
