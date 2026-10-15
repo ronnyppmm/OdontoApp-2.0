@@ -24,7 +24,7 @@ srv.listen(0, async () => {
   const modal = () => (D.getElementById('modalContent') || {}).textContent || '';
   const main = () => D.getElementById('mainContent').textContent;
   const d = E('today()'), pastDay = E("sumarDias(today(),-3)"), future = E("sumarDias(today(),5)");
-  const seed = (extra) => { w.__x = JSON.parse(JSON.stringify(extra || {})); E("Patients.all().length=0;Patients.all().push(Patients.blank(Object.assign({id:1,name:'Ana López',cedula:'1712345678',birthdate:'1990-05-17'},__x)));Patients.setCurrent(Patients.all()[0]);nextRecetaId=1;nextPresupId=1;nextId=2;saveNow();Patients.select(1);"); };
+  const seed = (extra) => { w.__x = JSON.parse(JSON.stringify(extra || {})); E("Patients.all().length=0;Patients.all().push(Patients.blank(Object.assign({id:1,name:'Ana López',cedula:'1712345678',birthdate:'1990-05-17'},__x)));Patients.setCurrent(Patients.all()[0]);Counters.reset();Counters.set('nextId',2);saveNow();Patients.select(1);"); };
   const lastOpened = () => opened[opened.length - 1] || '';
 
   // ───────── 1. estructura ─────────
@@ -77,7 +77,7 @@ srv.listen(0, async () => {
   click($(`[data-action="consents.view"][data-id="${cid}"]`)); opened.length = 0; click($('#modalContent [data-action="consents.print"]'));
   const ph = lastOpened();
   check('imprimir abre un documento propio con título, paciente, texto, firmante y fecha (antes imprimía la página de detrás porque la hoja de impresión oculta la ventana)', /Consentimiento — /.test(ph) && /Ana López/.test(ph) && /Firmante original/.test(ph) && new RegExp('Firmado el').test(ph) && /ENDODONCIA|Endodoncia/i.test(ph), ph.slice(0, 200));
-  check('el documento impreso no usa onclick (sus botones se enlazan con un script propio)', !/onclick=/.test(ph) && /id="btnPrint"/.test(ph) && /addEventListener/.test(ph));
+  check('el documento impreso no usa onclick (sin scripts en línea: los botones se enlazan desde la app)', !/onclick=/.test(ph) && /id="btnPrint"/.test(ph) && !/<script/i.test(ph));
   confirmAnswer = false; confirms.length = 0; click($(`[data-action="consents.delete"][data-id="${cid}"]`)) ;
   E('closeModal()'); E("Ficha.tab('consentimientos')"); click($(`[data-action="consents.delete"][data-id="${cid}"]`));
   check('eliminar un consentimiento FIRMADO advierte que es un documento legal y que se pierde la firma; "no" lo conserva', confirms.some(c => /FIRMADO/.test(c) && /documento legal/.test(c)) && E('Patients.all()[0].consents.length') === 2);
@@ -121,8 +121,8 @@ srv.listen(0, async () => {
   check('receta: cantidad entera de 1 a 999 (rechaza -5, 0, 1000, 2.5, texto)', ['-5', '0', '1000', '2.5', 'abc'].every(c => !CR(rx({ medicamentos: [med({ cantidadNum: c })] })).ok) && CR(rx({ medicamentos: [med({ cantidadNum: '' })] })).ok);
   check('receta: avisa (sin impedir) si falta diagnóstico, dosis, duración o cantidad', CR(rx({ diagnosticos: [] })).warnings.some(w => /diagnóstico/.test(w)) && CR(rx({ medicamentos: [med({ dosis: '', duracion: '', cantidadNum: '' })] })).warnings.length === 3);
   const r1 = E(`Prescriptions.add(1,${JSON.stringify(CR(rx()).clean)})`), r2 = E(`Prescriptions.add(1,${JSON.stringify(CR(rx()).clean)})`);
-  check('emitir: numeración correlativa (1, 2), datos del paciente copiados y diagnóstico principal derivado', r1.id === 1 && r2.id === 2 && E('nextRecetaId') === 3 && r1.paciente === 'Ana López' && r1.cedula === '1712345678' && r1.cie10cod === 'K02' && r1.diagnostico === 'Caries' && r1.edad >= 35);
-  check('eliminar receta: quita solo esa y el número NO se reutiliza', E('Prescriptions.remove(1,1).id') === 1 && E('Patients.all()[0].recetas.length') === 1 && E('nextRecetaId') === 3 && E('Prescriptions.remove(1,1)') === null);
+  check('emitir: numeración correlativa (1, 2), datos del paciente copiados y diagnóstico principal derivado', r1.id === 1 && r2.id === 2 && E("Counters.get('nextRecetaId')") === 3 && r1.paciente === 'Ana López' && r1.cedula === '1712345678' && r1.cie10cod === 'K02' && r1.diagnostico === 'Caries' && r1.edad >= 35);
+  check('eliminar receta: quita solo esa y el número NO se reutiliza', E('Prescriptions.remove(1,1).id') === 1 && E('Patients.all()[0].recetas.length') === 1 && E("Counters.get('nextRecetaId')") === 3 && E('Prescriptions.remove(1,1)') === null);
 
   // ───────── 6. recetas: pantalla ─────────
   seed(); E("CIE10_FULL=[['K02','Caries dental'],['K021','Caries de la dentina <b>x</b>'],['K05','Gingivitis']]"); E("Ficha.tab('recetas')");
@@ -167,7 +167,7 @@ srv.listen(0, async () => {
   check('presupuesto: cantidad entera 1–999, validez 1–365, fecha real, al menos un ítem', ['0', '1000', '2.5', 'x'].every(q => !CQ(qt({ items: [it('A', '5', q)] })).ok) && !CQ(qt({ validez: '0' })).ok && !CQ(qt({ validez: '400' })).ok && !CQ(qt({ fecha: '' })).ok && /al menos un ítem/.test(CQ(qt({ items: [it('', '5', '1')] })).error));
   check('presupuesto: descuento mayor al subtotal se rechaza; igual al subtotal sí, con aviso de total $0.00', /no puede ser mayor al subtotal/.test(CQ(qt({ items: [it('A', '10', '1')], descuento: '50' })).error) && CQ(qt({ items: [it('A', '10', '1')], descuento: '10' })).warnings.some(w => /\$0\.00/.test(w)) && !CQ(qt({ descuento: 'abc' })).ok);
   const q1 = E(`Quotes.add(1,${JSON.stringify(CQ(qt()).clean)})`);
-  check('crear: numeración correlativa, estado borrador, sin firma', q1.id === 1 && q1.estado === 'borrador' && q1.firmaPaciente === '' && q1.fechaAprobacion === null && E('nextPresupId') === 2);
+  check('crear: numeración correlativa, estado borrador, sin firma', q1.id === 1 && q1.estado === 'borrador' && q1.firmaPaciente === '' && q1.fechaAprobacion === null && E("Counters.get('nextPresupId')") === 2);
   check('aprobar valida firma y fecha (obligatoria, real y no futura)', !E(`Quotes.checkApprove({firma:'',fecha:'${d}'})`).ok && !E(`Quotes.checkApprove({firma:'Ana',fecha:''})`).ok && !E(`Quotes.checkApprove({firma:'Ana',fecha:'${future}'})`).ok && E(`Quotes.checkApprove({firma:' Ana  López ',fecha:'${d}'})`).clean.firma === 'Ana López');
   const ap = E(`Quotes.approve(1,1,{firma:'Ana',fecha:'${d}',createTreatments:true})`);
   check('aprobar crea los tratamientos con el descuento repartido: la suma = total del presupuesto ($89.99), ligados al presupuesto', ap.ok && E("Patients.all()[0].treatments.reduce((s,t)=>addM(s,t.cost),0)") === 89.99 && E('Patients.all()[0].treatments.every(t=>t.presupId===1&&t.status==="pendiente")') && E('Patients.all()[0].presupuestos[0].estado') === 'aprobado');

@@ -60,6 +60,17 @@ async function verificarBackupDiario(){
 }
 // Para soporte/recuperación: await listarBackupsLocales()  |  await Backup.downloadLocal('2026-10-02')
 async function listarBackupsLocales(){return((await idbGet('daily_backups'))||[]).map(x=>({fecha:x.fecha,pacientes:x.pacientes}));}
+/* Enlaza los botones Imprimir/Cerrar de un documento abierto en otra ventana. Se hace desde aquí (no con un <script> dentro del documento)
+   porque la política de seguridad del navegador (CSP) no permite scripts en línea. auto=true imprime al abrir. */
+function wirePrint(w,auto){
+try{
+var d=w&&w.document;if(!d||!d.getElementById)return;
+var b=d.getElementById('btnPrint'),c=d.getElementById('btnClose');
+if(b)b.addEventListener('click',function(){w.print();});
+if(c)c.addEventListener('click',function(){w.close();});
+if(auto)setTimeout(function(){try{w.print();}catch(e){}},400);
+}catch(e){}
+}
 function safeOpen(url,name,features){
 var w=null;
 try{ w=window.open(url,name,features); }catch(e){ w=null; }
@@ -104,7 +115,29 @@ return FRASES_DIA[Math.floor((now-new Date(now.getFullYear(),0,0))/864e5)%FRASES
 }
 const MONTHS_FULL=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 let curTab='datos',curPage='dashboard';
-let nextId=1,nextEgId=1,nextFactId=1,nextRecetaId=1,nextPresupId=1,logoColor='#2f9d94',logoImg=null;
+/* ═══ CONTADORES — siguiente N.° de cada tipo de registro (PRIVADOS: solo se tocan con esta API) ═══
+   nextId: pacientes y N.° de ficha · nextEgId: egresos · nextFactId: facturas · nextRecetaId: recetas · nextPresupId: presupuestos.
+   Nunca bajan por accidente: un valor inválido (texto, 0, negativo, decimal) se ignora. Los números usados no se reutilizan.
+     Counters.get(k)            valor actual            Counters.take(k)     devuelve el actual y avanza (para crear un registro)
+     Counters.set(k,n)          fija (true/false)       Counters.raiseTo(k,n) sube hasta n si es mayor (nunca baja)
+     Counters.all()             copia {nextId:…}        Counters.merge(obj)  fija los que vengan válidos (cargar / restaurar)
+     Counters.maxWith(obj)      sube cada uno al mayor (sincronizar)             Counters.reset()   todos a 1 */
+const Counters=(function(){
+  var KEYS=['nextId','nextEgId','nextFactId','nextRecetaId','nextPresupId'],v={};
+  function reset(){KEYS.forEach(function(k){v[k]=1;});}
+  function num(n){n=Number(n);return Number.isSafeInteger(n)&&n>=1?n:null;}
+  function chk(k){if(KEYS.indexOf(k)<0)throw new Error('Contador desconocido: '+k);}
+  function get(k){chk(k);return v[k];}
+  function set(k,n){chk(k);var x=num(n);if(x===null)return false;v[k]=x;return true;}
+  function take(k){chk(k);var x=v[k];v[k]=x+1;return x;}
+  function raiseTo(k,n){chk(k);var x=num(n);if(x!==null&&x>v[k])v[k]=x;return v[k];}
+  function all(){var o={};KEYS.forEach(function(k){o[k]=v[k];});return o;}
+  function merge(o){if(!o||typeof o!=='object')return;KEYS.forEach(function(k){var x=num(o[k]);if(x!==null)v[k]=x;});}
+  function maxWith(o){if(!o||typeof o!=='object')return;KEYS.forEach(function(k){raiseTo(k,o[k]);});}
+  reset();
+  return {KEYS:KEYS.slice(),get:get,set:set,take:take,raiseTo:raiseTo,all:all,merge:merge,maxWith:maxWith,reset:reset};
+})();
+let logoColor='#2f9d94',logoImg=null;
 let clinicaRUC='',clinicaDireccion='',clinicaTelefono='';
 
 function initials(n){return n.split(' ').map(x=>x[0]).join('').substring(0,2).toUpperCase()}
@@ -151,34 +184,57 @@ res(_dbMain);};
 rq.onerror=e=>rej(e.target.error);
 });
 }
-function idbSet(key,val){
+/* ── acceso a IndexedDB: con la bóveda activada TODO se guarda cifrado (ver js/vault.js) ──
+   rawSet/rawGet leen y escriben tal cual; idbSet/idbGet cifran y descifran. */
+function rawSet(key,val){
 return openMainDB().then(db=>new Promise(res=>{
 const tx=db.transaction('kv','readwrite');
 tx.objectStore('kv').put(val,key);
 tx.oncomplete=()=>res(true);tx.onerror=()=>res(false);
-})).catch(e=>{console.warn('IndexedDB:',e);return false;});
+}));
 }
-function idbGet(key){
+function rawGet(key){
 return openMainDB().then(db=>new Promise(res=>{
 const rq=db.transaction('kv','readonly').objectStore('kv').get(key);
 rq.onsuccess=()=>res(rq.result);rq.onerror=()=>res(undefined);
-})).catch(()=>undefined);
+}));
 }
+let _idbQ=Promise.resolve();      // las escrituras salen en el mismo orden en que se pidieron (cifrar es asíncrono)
+const _idbFault={};               // claves que no se pudieron descifrar: NO se sobrescriben (si no, se perdería lo único que queda)
+function idbSet(key,val){
+if(Vault.locked()||_idbFault[key])return Promise.resolve(false);
+const sealed=(Vault.sealing()&&val!==undefined)?Vault.seal(val,'kv|'+key):Promise.resolve(val);
+sealed.catch(()=>{});
+const w=_idbQ.then(()=>sealed).then(v=>rawSet(key,v)).catch(e=>{console.warn('IndexedDB:',e);return false;});
+_idbQ=w;return w;
+}
+function idbGet(key){
+return rawGet(key).then(v=>{
+if(!Vault.isEnv(v))return v;
+if(Vault.locked())return undefined;
+return Vault.open(v,'kv|'+key).then(x=>{delete _idbFault[key];return x;},err=>{
+_idbFault[key]=true;console.error('No se pudo descifrar '+key,err);
+if(key==='state'){try{alert('⚠️ No se pudieron leer los datos cifrados de este dispositivo.\n\nPor seguridad la app NO sobrescribirá nada. Restaura un respaldo o recupera con tu código.');}catch(e){}}
+return undefined;});
+}).catch(()=>undefined);
+}
+/* Con el cifrado activado no queda copia legible de los datos en localStorage */
+function purgeMirror(){['oa3_pts','oa3_eg','oa3_fact','oa3_arch','oa3_svc','oa3_logo','oa3_meta'].forEach(k=>{try{localStorage.removeItem(k);}catch(e){}});}
 function saveNow(){
 _savePending=false;
 const bundle={v:DATA_VERSION,t:Date.now(),patients:Patients.all(),egresos:Finance.expenses(),facturas:Finance.invoices(),archivosContables:Finance.archives(),servicios:Services.list(),quickAppts:Appts.quick(),meds:MEDICAMENTOS_COMUNES,
-nextId,nextEgId,nextFactId,nextRecetaId,nextPresupId,
+...Counters.all(),
 logo:{text:document.getElementById('logoText').textContent,prof:document.getElementById('logoProfesional').textContent,color:logoColor,img:logoImg,ruc:clinicaRUC,dir:clinicaDireccion,tel:clinicaTelefono}};
 idbSet('state',bundle); // ← la "base de datos grande"
-try{ // espejo localStorage (compatibilidad); si no cabe, no rompe nada
+if(Vault.enabled()){purgeMirror();}else try{ // espejo localStorage (compatibilidad); si no cabe, no rompe nada
 localStorage.setItem('oa3_pts',JSON.stringify(Patients.all()));
 localStorage.setItem('oa3_eg',JSON.stringify(Finance.expenses()));
 localStorage.setItem('oa3_fact',JSON.stringify(Finance.invoices()));
-localStorage.setItem('oa3_nid',nextId);
-localStorage.setItem('oa3_neg',nextEgId);
-localStorage.setItem('oa3_nfact',nextFactId);
-localStorage.setItem('oa3_nreceta',nextRecetaId);
-localStorage.setItem('oa3_npresup',nextPresupId);
+localStorage.setItem('oa3_nid',Counters.get('nextId'));
+localStorage.setItem('oa3_neg',Counters.get('nextEgId'));
+localStorage.setItem('oa3_nfact',Counters.get('nextFactId'));
+localStorage.setItem('oa3_nreceta',Counters.get('nextRecetaId'));
+localStorage.setItem('oa3_npresup',Counters.get('nextPresupId'));
 localStorage.setItem('oa3_logo',JSON.stringify(bundle.logo));
 localStorage.setItem('oa3_arch',JSON.stringify(Finance.archives()));
 localStorage.setItem('oa3_svc',JSON.stringify(Services.list()));
@@ -213,8 +269,7 @@ Patients.setAll(b.patients||[]);Finance.setExpenses(b.egresos);Finance.setInvoic
 Finance.setArchives(b.archivosContables);Services.setAll(b.servicios);
 Appts.setQuick(b.quickAppts);
 if(Array.isArray(b.meds)&&b.meds.length)MEDICAMENTOS_COMUNES=b.meds.filter(m=>typeof m==='string');
-nextId=b.nextId||nextId;nextEgId=b.nextEgId||nextEgId;nextFactId=b.nextFactId||nextFactId;
-nextRecetaId=b.nextRecetaId||nextRecetaId;nextPresupId=b.nextPresupId||nextPresupId;
+Counters.merge(b);
 if(b.logo){
 document.getElementById('logoText').textContent=b.logo.text||'OdontoApp';
 document.getElementById('logoProfesional').textContent=b.logo.prof||'Dr. Profesional';
@@ -236,20 +291,20 @@ if(Patients.current())Patients.select(Patients.current().id);else showPage(curPa
 
 function seedDemo(){
   Patients.setAll([
-    {demo:true,id:nextId++,name:'María García',age:34,phone:'0987-654-321',email:'maria@mail.com',cedula:'1712345678',birthdate:todayBD(),alergias:'Penicilina',antecedentes:'Hipertensión controlada',surfData:{},wholeData:{},
+    {demo:true,id:Counters.take('nextId'),name:'María García',age:34,phone:'0987-654-321',email:'maria@mail.com',cedula:'1712345678',birthdate:todayBD(),alergias:'Penicilina',antecedentes:'Hipertensión controlada',surfData:{},wholeData:{},
      diary:[{id:1,date:'2025-03-10',time:'09:00',doctor:'Dr. Pérez',title:'Consulta inicial',body:'Paciente refiere dolor en zona posterior. Caries en pieza 36.',alert:'Control en 7 días'}],
      treatments:[{id:1,name:'Extracción molar 46',date:'2025-01-10',status:'realizado',cost:45,tooth:'46'},{id:2,name:'Obturación resina 36',date:'2025-03-15',status:'pendiente',cost:35,tooth:'36'}],
      payments:[{id:1,concept:'Extracción molar',date:'2025-01-10',amount:45,type:'Efectivo'}],
      appointments:[{id:1,date:daysFromNow(3),time:'10:00',reason:'Control y limpieza',status:'pendiente'}]},
-    {demo:true,id:nextId++,name:'Carlos Ruiz',age:28,phone:'0991-234-567',email:'carlos@mail.com',cedula:'1798765432',birthdate:'1997-07-22',alergias:'Ninguna',antecedentes:'Sin antecedentes',surfData:{},wholeData:{},diary:[],
+    {demo:true,id:Counters.take('nextId'),name:'Carlos Ruiz',age:28,phone:'0991-234-567',email:'carlos@mail.com',cedula:'1798765432',birthdate:'1997-07-22',alergias:'Ninguna',antecedentes:'Sin antecedentes',surfData:{},wholeData:{},diary:[],
      treatments:[{id:1,name:'Limpieza dental',date:'2024-12-01',status:'realizado',cost:30,tooth:'General'}],
      payments:[{id:1,concept:'Limpieza dental',date:'2024-12-01',amount:30,type:'Transferencia'}],
      appointments:[{id:1,date:today(),time:'09:00',reason:'Revisión general',status:'pendiente'}]}
   ]);
   Finance.setExpenses([
-    {demo:true,id:nextEgId++,concepto:'Materiales dentales',categoria:'Materiales',monto:120,fecha:'2025-03-01',proveedor:'DentalPro'},
-    {demo:true,id:nextEgId++,concepto:'Arriendo local',categoria:'Arriendo',monto:350,fecha:'2025-03-01',proveedor:'Propietario'},
-    {demo:true,id:nextEgId++,concepto:'Servicios básicos',categoria:'Servicios',monto:45,fecha:'2025-03-05',proveedor:'CNT / Eléctrica'},
+    {demo:true,id:Counters.take('nextEgId'),concepto:'Materiales dentales',categoria:'Materiales',monto:120,fecha:'2025-03-01',proveedor:'DentalPro'},
+    {demo:true,id:Counters.take('nextEgId'),concepto:'Arriendo local',categoria:'Arriendo',monto:350,fecha:'2025-03-01',proveedor:'Propietario'},
+    {demo:true,id:Counters.take('nextEgId'),concepto:'Servicios básicos',categoria:'Servicios',monto:45,fecha:'2025-03-05',proveedor:'CNT / Eléctrica'},
   ]);
   save();
 }
@@ -267,9 +322,58 @@ req.onsuccess=e=>{_imgDB=e.target.result;res(_imgDB);};
 req.onerror=e=>rej(e.target.error);
 });
 }
-function imgDbPut(id,blob){return openImgDB().then(db=>new Promise((res,rej)=>{const tx=db.transaction('images','readwrite');tx.objectStore('images').put(blob,id);tx.oncomplete=res;tx.onerror=()=>rej(tx.error);}));}
-function imgDbGet(id){return openImgDB().then(db=>new Promise((res,rej)=>{const tx=db.transaction('images','readonly');const rq=tx.objectStore('images').get(id);rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);}));}
+function imgDbPut(id,blob){if(Vault.locked())return Promise.reject(new Error('Bóveda cerrada'));return (Vault.sealing()?Vault.seal(blob,'img|'+id):Promise.resolve(blob)).then(v=>openImgDB().then(db=>new Promise((res,rej)=>{const tx=db.transaction('images','readwrite');tx.objectStore('images').put(v,id);tx.oncomplete=res;tx.onerror=()=>rej(tx.error);})));}
+function imgDbGet(id){return openImgDB().then(db=>new Promise((res,rej)=>{const tx=db.transaction('images','readonly');const rq=tx.objectStore('images').get(id);rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);})).then(v=>Vault.isEnv(v)?Vault.open(v,'img|'+id):v);}
 function imgDbDel(id){return openImgDB().then(db=>new Promise((res)=>{const tx=db.transaction('images','readwrite');tx.objectStore('images').delete(id);tx.oncomplete=res;tx.onerror=()=>res();}));}
+/* ── activar / desactivar el cifrado de lo que ya está guardado ──
+   Se recorre cada registro por separado: si algo se interrumpe, los registros ya convertidos y los que faltan
+   se leen igual (Vault.open deja pasar lo que aún no está cifrado). Antes de reemplazar un registro se comprueba que
+   descifrado da exactamente lo mismo, y solo se reemplaza si nadie lo cambió mientras tanto. */
+function _sameVal(a,b){
+if(typeof Blob!=='undefined'&&a instanceof Blob)return b instanceof Blob&&a.size===b.size&&a.type===b.type;
+return JSON.stringify(a)===JSON.stringify(b);
+}
+function _sameCt(a,b){
+if(!a||!b||a.byteLength!==b.byteLength)return false;
+const x=new Uint8Array(a),y=new Uint8Array(b);for(let i=0;i<x.length;i++)if(x[i]!==y[i])return false;return true;
+}
+async function _reencodePass(open,store,tag,sealIt,fresh){
+const db=await open();let changed=0,skipped=0;
+try{
+if(!db.objectStoreNames.contains(store))return{changed:0,skipped:0};   // base sin ese almacén: no hay nada que convertir
+const keys=await new Promise(res=>{const rq=db.transaction(store,'readonly').objectStore(store).getAllKeys();rq.onsuccess=()=>res(rq.result);rq.onerror=()=>res([]);});
+for(const k of keys){
+const v=await new Promise(res=>{const rq=db.transaction(store,'readonly').objectStore(store).get(k);rq.onsuccess=()=>res(rq.result);rq.onerror=()=>res(undefined);});
+if(v===undefined||sealIt===Vault.isEnv(v))continue;
+const aad=tag+'|'+k;
+const nv=sealIt?await Vault.seal(v,aad):await Vault.open(v,aad);
+if(sealIt&&!_sameVal(await Vault.open(nv,aad),v))throw new Error('La verificación de '+aad+' falló');
+const ok=await new Promise(res=>{
+const tx=db.transaction(store,'readwrite'),st=tx.objectStore(store),g=st.get(k);let did=false;
+g.onsuccess=()=>{const cur=g.result;
+const same=sealIt?(!Vault.isEnv(cur)&&_sameVal(cur,v)):(Vault.isEnv(cur)&&_sameCt(cur.ct,v.ct));
+if(same){st.put(nv,k);did=true;}};
+tx.oncomplete=()=>res(did);tx.onerror=()=>res(false);tx.onabort=()=>res(false);
+});
+if(ok)changed++;else skipped++;
+}
+return{changed,skipped};
+}finally{if(fresh)db.close();}
+}
+async function vaultReencode(sealIt){
+const stores=[
+[openMainDB,'kv','kv'],
+[openImgDB,'images','img'],
+[()=>new Promise((res,rej)=>{const rq=indexedDB.open('odontoapp_sync',1);rq.onupgradeneeded=e=>{if(!e.target.result.objectStoreNames.contains('kv'))e.target.result.createObjectStore('kv');};rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);}),'kv','sdb',true]
+];
+let total=0;
+for(const [open,store,tag,fresh] of stores){
+let r,tries=0;
+do{r=await _reencodePass(open,store,tag,sealIt,fresh);total+=r.changed;}while(r.skipped>0&&++tries<5);
+if(r.skipped>0)throw new Error('Hubo cambios simultáneos en '+tag+'; inténtalo de nuevo');
+}
+return total;
+}
 function fmtBytes(b){if(b>1048576)return(b/1048576).toFixed(1)+'MB';return Math.round(b/1024)+'KB';}
 
 function factoryReset(){
@@ -279,7 +383,7 @@ function factoryReset(){
   ['oa3_pts','oa3_eg','oa3_fact','oa3_nid','oa3_neg','oa3_nfact','oa3_nreceta','oa3_logo','oa3_meds','oa3_qa','oa3_qa_ok','oa3_arch','oa3_svc'].forEach(k=>localStorage.removeItem(k));
   // Reset state
   Patients.setAll([]);Finance.setExpenses([]);Finance.setInvoices([]);Finance.setArchives([]);Services.setAll([]);Appts.setQuick([]);
-  nextId=1;nextEgId=1;nextFactId=1;nextRecetaId=1;
+  Counters.reset();
   logoColor='#2f9d94';logoImg=null;
   clinicaRUC='';clinicaDireccion='';clinicaTelefono='';
   MEDICAMENTOS_COMUNES=['Amoxicilina 500mg','Amoxicilina + Ácido Clavulánico 875/125mg','Azitromicina 500mg','Clindamicina 300mg','Metronidazol 500mg','Ibuprofeno 400mg','Ibuprofeno 600mg','Paracetamol 500mg','Naproxeno 500mg','Ketorolaco 10mg','Diclofenaco 50mg','Dexametasona 4mg','Prednisona 5mg','Cloruro de Sodio 0.9% (Suero Fisiológico)','Clorhexidina 0.12% enjuague bucal','Gel de Clorhexidina 1%','Clorfenamina 4mg','Loratadina 10mg','Omeprazol 20mg'];
@@ -343,7 +447,7 @@ function buildPayload(){
         logoColor, logoImg
       },
       patients:Patients.all(), egresos:Finance.expenses(), facturas:Finance.invoices(), servicios:Services.list(), archivosContables:Finance.archives(), quickAppts:Appts.quick(),
-nextId, nextEgId, nextFactId, nextRecetaId, nextPresupId,
+...Counters.all(),
 meds: MEDICAMENTOS_COMUNES
     },
     updated_at: new Date().toISOString()

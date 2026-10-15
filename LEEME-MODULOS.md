@@ -147,3 +147,33 @@ También comprueba que el texto normal (con & ' " <) se vea bien, sin doble esca
 - **Registro de actividad:** anota «Ficha N° <ficha>» corta; las entradas con id largo (v20–v21) se convierten una vez (`oa3_audit_fichas2`). La ficha no es editable en el formulario.
 - **Pruebas:** `tests/ficha.test.js` (28 comprobaciones).
 - **Corrección v22.1 (auditoría):** la migración automática había metido nombres de API en 4 textos visibles («Facturas y Finance.expenses()», «Sin Services.list() configurados»…). Corregidos y protegidos con una prueba en `arquitectura.test.js` (ningún texto visible contiene `Finance.`, `Services.`, etc.).
+
+
+## 17. Seguridad del navegador y cifrado de datos (v23)
+**Supabase local y fijo.** `js/vendor/supabase-2.117.3.js` (MIT, licencia al lado) con huella SHA-384 en `index.html`. Ya no se carga nada de internet que sea código; funciona offline y una versión nueva del CDN no puede romper la nube. Para actualizar: `npm pack @supabase/supabase-js@X.Y.Z`, copiar `dist/umd/supabase.js`, recalcular la huella (`openssl dgst -sha384 -binary … | openssl base64 -A`), cambiar nombre en `index.html` y `sw.js`. `arquitectura.test.js` comprueba que la huella coincide.
+
+**CSP** (meta en `index.html`): `script-src 'self'` (sin `unsafe-inline` ni `unsafe-eval`), `connect-src` solo `*.supabase.co`, `object-src/base-uri/form-action 'none'`. `style-src` conserva `'unsafe-inline'` porque la app usa muchos `style=""`. **Consecuencia:** ningún HTML generado puede llevar `<script>`. Los documentos de impresión (recibo, receta, consentimiento) enlazan sus botones desde la app con `wirePrint(w, auto)` (core.js). Si agregas otro documento imprimible, usa `wirePrint`; una prueba falla si aparece un `<script` en un módulo.
+
+**Bóveda (`js/vault.js`, se carga primero).** Cifrado en reposo opcional, AES-GCM 256.
+- Una clave de datos (DEK) aleatoria vive solo en memoria; en disco está *envuelta* dos veces: con el PIN y con el código de recuperación (PBKDF2-SHA256, 600 000 vueltas). Cambiar PIN o código solo re-envuelve; los datos no se tocan.
+- Con la bóveda activa, `idbSet/idbGet` (core.js), `imgDbPut/imgDbGet` y `sdbPut/sdbGet` (sync.js) cifran y descifran solos. Cada sobre lleva su nombre como dato autenticado (`kv|state`, `img|id`, `sdb|clave`): cambiar de lugar un registro cifrado hace que no abra. Las escrituras salen en orden.
+- **Arranque:** `main.js` ejecuta `arrancar()` solo cuando `Vault.whenOpen()` se cumple, es decir, después de ingresar el PIN. Mientras está cerrada, `idbSet` devuelve `false` y `idbGet` `undefined`: la app no puede sobrescribir lo cifrado con datos vacíos.
+- Un registro que no se pueda descifrar se marca (`_idbFault`) y **no se sobrescribe** en esa sesión.
+- Con cifrado activo no se escribe el espejo de `localStorage` (`purgeMirror`).
+- Activar/desactivar (`vaultReencode(true|false)`): convierte registro por registro, verifica antes de reemplazar y solo reemplaza si nadie lo cambió entre la lectura y la escritura (si cambió, repite). Si algo falla, vuelve atrás. Al desactivar, `Vault.pause(true)` hace que lo nuevo se guarde en claro mientras se convierte.
+- Con la bóveda activa el PIN válido es el que *abre la bóveda* (no queda un verificador más débil en localStorage) y se exigen **6 a 8 dígitos**.
+- **Límites (también están en pantalla):** protege los archivos del navegador, no la app abierta; **no** cifra los respaldos que exportas (`.json`), ni la copia en Supabase, ni la sesión de Supabase guardada por su cliente en localStorage. Un PIN numérico se puede adivinar por fuerza bruta con muchos recursos; por eso 600 000 vueltas y 6–8 dígitos. Una contraseña larga en vez de PIN sería el siguiente paso.
+- Si se pierden el PIN y el código, los datos de ese dispositivo no se pueden recuperar (sí desde un respaldo o la nube).
+
+**Pruebas.** `tests/vault.test.js` (en `npm test`, jsdom) y `tests/browser/*.browser.js` (Chromium real; `npm run test:browser`, requiere `playwright-core` y `CHROMIUM=ruta`): vuelcan los archivos crudos de IndexedDB/localStorage y comprueban que no queda texto legible.
+
+**Errores hallados al probar en Chromium real y corregidos:** `Vault.isEnv` devolvía el buffer en vez de `true` (habría cifrado dos veces en una segunda pasada); en jsdom un `Blob` no sobrevive al clon de fake-indexeddb (solo afecta a las pruebas).
+
+
+## 18. Contadores privados (v24)
+- `nextId, nextEgId, nextFactId, nextRecetaId, nextPresupId` ya **no son variables globales**. Viven dentro de `Counters` (core.js): `get(k)`, `take(k)` (devuelve el actual y avanza: úsalo para crear un registro), `set(k,n)`, `raiseTo(k,n)` (solo sube), `all()` (copia), `merge(obj)` (cargar/restaurar), `maxWith(obj)` (sincronizar: el mayor), `reset()`.
+- Valores inválidos (0, negativos, decimales, texto, NaN, infinito) se **ignoran**: un contador no puede quedar roto ni retroceder por un respaldo o un formulario malo. Un nombre desconocido da error (no se crean contadores por accidente).
+- Los nombres siguen igual en el estado guardado, el respaldo y la sincronización (`nextId:` etc.), así que los datos antiguos se leen sin migrar.
+- `Counters.take('nextId')` para un paciente nuevo; el N.° de ficha usa `Counters.get/set/raiseTo` dentro de `Patients`.
+- **Bug corregido:** «Restablecer de fábrica» no reiniciaba el contador de presupuestos; ahora `Counters.reset()` reinicia los cinco (después avanzan solo los de los datos de ejemplo).
+- `arquitectura.test.js` (39 comprobaciones) vigila: ninguno es global, ningún módulo los usa como variable suelta, y el comportamiento de cada método.

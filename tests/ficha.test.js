@@ -25,27 +25,27 @@ srv.listen(0, async () => {
   const fichas = () => E('Patients.all().map(p=>p.ficha)');
 
   // ───────── 1. asignación ─────────
-  E('nextId=1'); set([pt(1, 'Uno'), pt(2, 'Dos'), pt(3, 'Tres')]);
+  E("Counters.set('nextId',1)"); set([pt(1, 'Uno'), pt(2, 'Dos'), pt(3, 'Tres')]);
   check('pacientes con id pequeño conservan su número como ficha', JSON.stringify(fichas()) === '[1,2,3]', fichas());
   const BIG = 1792000000000000;
-  E('nextId=1'); set([pt(BIG + 5, 'C'), pt(BIG + 1, 'A'), pt(BIG + 3, 'B')]);
+  E("Counters.set('nextId',1)"); set([pt(BIG + 5, 'C'), pt(BIG + 1, 'A'), pt(BIG + 3, 'B')]);
   check('ids largos reciben 1, 2, 3 por ORDEN DE CREACIÓN (id menor = más antiguo)', E('Patients.get(' + (BIG + 1) + ').ficha') === 1 && E('Patients.get(' + (BIG + 3) + ').ficha') === 2 && E('Patients.get(' + (BIG + 5) + ').ficha') === 3);
-  E('nextId=1'); set([pt(1, 'A'), pt(BIG, 'B'), pt(2, 'C'), pt(BIG + 1, 'D')]);
+  E("Counters.set('nextId',1)"); set([pt(1, 'A'), pt(BIG, 'B'), pt(2, 'C'), pt(BIG + 1, 'D')]);
   check('mezcla: los antiguos conservan su número y los nuevos siguen después', E('Patients.get(1).ficha') === 1 && E('Patients.get(2).ficha') === 2 && E(`Patients.get(${BIG}).ficha`) === 3 && E(`Patients.get(${BIG + 1}).ficha`) === 4, fichas());
-  E('nextId=1'); set([pt(10, 'A', { ficha: 5 }), pt(11, 'B', { ficha: 5 }), pt(12, 'C', { ficha: 6 })]);
+  E("Counters.set('nextId',1)"); set([pt(10, 'A', { ficha: 5 }), pt(11, 'B', { ficha: 5 }), pt(12, 'C', { ficha: 6 })]);
   check('fichas repetidas: se queda la del paciente más antiguo y el otro recibe un número nuevo', E('Patients.get(10).ficha') === 5 && E('Patients.get(12).ficha') === 6 && E('Patients.get(11).ficha') > 6 && new Set(fichas()).size === 3, fichas());
-  E('nextId=1'); set([pt(20, 'A', { ficha: 0 }), pt(21, 'B', { ficha: -3 }), pt(22, 'C', { ficha: '4' }), pt(23, 'D', { ficha: 1.5 }), pt(24, 'E', { ficha: 1e12 }), pt(25, 'F', { ficha: null }), pt(26, 'G', { ficha: NaN })]);
+  E("Counters.set('nextId',1)"); set([pt(20, 'A', { ficha: 0 }), pt(21, 'B', { ficha: -3 }), pt(22, 'C', { ficha: '4' }), pt(23, 'D', { ficha: 1.5 }), pt(24, 'E', { ficha: 1e12 }), pt(25, 'F', { ficha: null }), pt(26, 'G', { ficha: NaN })]);
   check('fichas inválidas (0, negativa, texto, decimal, enorme, nula) se reemplazan por números válidos y únicos', fichas().every(f => Number.isInteger(f) && f > 0 && f < 1e9) && new Set(fichas()).size === 7, fichas());
   // determinista: mismo resultado sin importar el orden en que llegan
   const base = [pt(BIG + 9, 'X', { ficha: 7 }), pt(BIG + 2, 'Y', { ficha: 7 }), pt(BIG + 4, 'Z')];
-  E('nextId=1'); set(base); const a1 = JSON.stringify(E('Patients.all().map(p=>[p.id,p.ficha]).sort((a,b)=>a[0]-b[0])'));
-  E('nextId=1'); set(base.slice().reverse()); const a2 = JSON.stringify(E('Patients.all().map(p=>[p.id,p.ficha]).sort((a,b)=>a[0]-b[0])'));
+  E("Counters.set('nextId',1)"); set(base); const a1 = JSON.stringify(E('Patients.all().map(p=>[p.id,p.ficha]).sort((a,b)=>a[0]-b[0])'));
+  E("Counters.set('nextId',1)"); set(base.slice().reverse()); const a2 = JSON.stringify(E('Patients.all().map(p=>[p.id,p.ficha]).sort((a,b)=>a[0]-b[0])'));
   check('el resultado NO depende del orden de llegada (dos dispositivos llegan a lo mismo)', a1 === a2, a1 + ' vs ' + a2);
   check('ejecutarlo de nuevo no cambia nada (estable)', E('Patients.assignFichas()') === 0);
-  check('setAll con datos sin ficha los numera Y guarda (para que la migración quede)', (() => { E('nextId=1'); set([pt(1, 'A'), pt(2, 'B')]); return true; })() && (E('Patients.all().every(p=>p.ficha>0)')));
+  check('setAll con datos sin ficha los numera Y guarda (para que la migración quede)', (() => { E("Counters.set('nextId',1)"); set([pt(1, 'A'), pt(2, 'B')]); return true; })() && (E('Patients.all().every(p=>p.ficha>0)')));
 
   // ───────── 2. nuevos pacientes ─────────
-  E('nextId=1'); set([pt(1, 'A'), pt(2, 'B'), pt(3, 'C')]);
+  E("Counters.set('nextId',1)"); set([pt(1, 'A'), pt(2, 'B'), pt(3, 'C')]);
   E("Patients.setCurrent(null)"); E("Patients.openNew()"); D.getElementById('f_name').value = 'Nuevo Cuarto'; click(act('patients.saveNew')); await wait(150);
   check('un paciente creado por el formulario recibe el siguiente número (4)', E('Patients.current().ficha') === 4, E('Patients.current().ficha'));
   E(`Patients.remove(${E('Patients.current().id')})`);
@@ -71,7 +71,7 @@ srv.listen(0, async () => {
   E("Search.hide()");
 
   // ───────── 4. registro de actividad ─────────
-  E('nextId=1'); set([pt(BIG + 1, 'Ana Privada'), pt(BIG + 2, 'Beto Privado')]);
+  E("Counters.set('nextId',1)"); set([pt(BIG + 1, 'Ana Privada'), pt(BIG + 2, 'Beto Privado')]);
   await E("idbSet('audit', [])"); E("localStorage.removeItem('oa3_audit_fichas');localStorage.removeItem('oa3_audit_fichas2')");
   E('Patients.renderList()'); E(`Patients.select(${BIG + 2})`); await wait(200); await w.eval('Seguridad')._flush();
   let log = (await E("idbGet('audit')")) || [];
@@ -90,7 +90,7 @@ srv.listen(0, async () => {
   E("closeModal()");
 
   // ───────── 5. respaldos ─────────
-  E('nextId=1'); set([pt(BIG + 1, 'A'), pt(BIG + 2, 'B')]);
+  E("Counters.set('nextId',1)"); set([pt(BIG + 1, 'A'), pt(BIG + 2, 'B')]);
   E('Backup.exportFile()'); await wait(150);
   const exp = JSON.parse(await new Promise(ok => { const r = new w.FileReader(); r.onload = () => ok(r.result); r.readAsText(lastBlob); }));
   check('el archivo de respaldo incluye la ficha de cada paciente', exp.patients.map(p => p.ficha).join() === '1,2', exp.patients.map(p => p.ficha));
@@ -98,7 +98,7 @@ srv.listen(0, async () => {
   check('al restaurar un respaldo sin fichas o con repetidas, quedan todas únicas y válidas', r1.ok && E('Patients.all().every(p=>p.ficha>0)') && new Set(fichas()).size === 3, fichas());
   const r2 = await E(`Backup.replaceAll({patients:[{id:5,name:'Antiguo'}]},'t')`);
   check('un respaldo antiguo (ids pequeños) conserva el número = id', r2.ok && E('Patients.all()[0].ficha') === 5);
-  check('el contador nextId queda por encima de la mayor ficha', E('nextId') > 5);
+  check('el contador nextId queda por encima de la mayor ficha', E("Counters.get('nextId')") > 5);
   check('sin errores de JavaScript', errs.length === 0, errs.join(' | '));
   const bad = results.filter(x => !x).length; console.log(bad ? `\n✘ ${bad} comprobación(es) fallaron` : `\n✔ Todas las pruebas de N.° de ficha pasaron (${results.length} comprobaciones)`);
   w.close(); srv.close(); process.exit(bad ? 1 : 0);

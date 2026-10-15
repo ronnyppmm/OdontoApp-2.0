@@ -494,7 +494,6 @@ const Finance=(function(){
   Comprobante de Pago · Emitido por ${clinica} · ${fmtDate(today())} · Generado por OdontoApp
   </div>
   </div>
-  <script>document.getElementById('btnPrint').addEventListener('click',function(){window.print();});document.getElementById('btnClose').addEventListener('click',function(){window.close();});</script>
   </bo${'dy></html>'}`;
 
     return html;
@@ -569,7 +568,7 @@ const Finance=(function(){
   function printReceipt(payId){
     var f=findPayment(payId);if(!f)return;
     var w=safeOpen('','_blank','width=900,height=780');
-    w.document.write(_receiptHtml(f.py,f.p));w.document.close();
+    w.document.write(_receiptHtml(f.py,f.p));w.document.close();wirePrint(w);
   }
   function downloadMonthly(){
     var now=localDate(new Date()),m=now.getMonth(),y=now.getFullYear(),d=monthData(m,y,{includeArchived:true}),t=MONTHS_FULL[m]+' '+y;   // informe del mes completo (incluye lo ya archivado)

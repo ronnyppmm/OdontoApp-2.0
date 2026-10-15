@@ -222,7 +222,7 @@ const Consents=(function(){
       '<div class="txt">'+esc(c.texto)+'</div>'+
       '<div class="sign"><div>'+firmante+(c.nombreRepresentante?'<small>Representante: '+esc(c.nombreRepresentante)+'</small>':'')+(c.firmado?'<small>Firmado el '+fmtDate(c.fechaFirma)+'</small>':'<small>Firma del paciente / representante</small>')+'</div>'+
       '<div>'+prof+'<small>Firma del profesional</small></div></div>'+
-      '<script>document.getElementById("btnPrint").addEventListener("click",function(){window.print();});document.getElementById("btnClose").addEventListener("click",function(){window.close();});<\/script></body></html>';
+      '</body></html>';
   }
 
   /* ── pantallas ── */
@@ -360,7 +360,7 @@ const Consents=(function(){
   }
   function printDoc(id){
     var p=Patients.current(),c=find(p,id);if(!c)return;
-    var w=safeOpen('','_blank','width=900,height=800');w.document.write(printHtml(c,p));w.document.close();
+    var w=safeOpen('','_blank','width=900,height=800');w.document.write(printHtml(c,p));w.document.close();wirePrint(w);
   }
   var api={tmpl:tmpl,find:find,checkSign:checkSign,checkCustom:checkCustom,addFromTemplate:addFromTemplate,addCustom:addCustom,sign:sign,remove:remove,printHtml:printHtml,
     render:render,openSelect:openSelect,openCustom:openCustom,view:view,openSign:openSign,add:add,saveCustom:saveCustom,confirmSign:confirmSign,deleteUI:deleteUI,printDoc:printDoc};
@@ -500,7 +500,7 @@ const Prescriptions=(function(){
   }
   function add(ptId,c){
     var p=Patients.get(ptId);if(!p)return null;
-    var r={id:nextRecetaId++,fecha:c.fecha,tipo:c.tipo,medico:c.medico,especialidad:c.especialidad,registro:c.registro,hc:c.hc,diagnosticos:c.diagnosticos,
+    var r={id:Counters.take('nextRecetaId'),fecha:c.fecha,tipo:c.tipo,medico:c.medico,especialidad:c.especialidad,registro:c.registro,hc:c.hc,diagnosticos:c.diagnosticos,
       cie10cod:c.diagnosticos[0]?c.diagnosticos[0].cod:'',diagnostico:c.diagnosticos[0]?c.diagnosticos[0].desc:'',indicaciones:c.indicaciones,medicamentos:c.medicamentos,
       paciente:p.name,cedula:p.cedula,edad:calcAge(p.birthdate)};
     (p.recetas=p.recetas||[]).push(r);save();return r;
@@ -810,7 +810,6 @@ const Prescriptions=(function(){
   <div class="patient-foot">Conserve este comprobante · Para dudas llame a: ${clinicaTelefono?esc(clinicaTelefono):clinica}</div>
   </div>
   </div>
-  <script>window.onload=function(){window.print()}<\/script>
   ${'</bo'+'dy></html>'}`;
   return html;
   }
@@ -876,7 +875,7 @@ const Prescriptions=(function(){
     if(id===undefined)id=lastViewed;
     var p=Patients.current(),r=find(p,id);if(!r)return;
     var w=safeOpen('','_blank','width=900,height=950');if(!w)return;
-    w.document.write(rxHtml(r));w.document.close();
+    w.document.write(rxHtml(r));w.document.close();wirePrint(w,true);
   }
   function removeMed(id){var el=document.getElementById('med-item-'+id);if(el)el.remove();}
   function qtyInput(id,value){var e=document.getElementById('mql_'+id);if(e)e.value=Prescriptions.numToLetras(value);}
@@ -926,7 +925,7 @@ const Quotes=(function(){
   }
   function add(ptId,c){
     var p=Patients.get(ptId);if(!p)return null;
-    var pr={id:nextPresupId++,fecha:c.fecha,validez:c.validez,observaciones:c.observaciones,items:c.items,descuento:c.descuento,subtotal:c.subtotal,total:c.total,estado:'borrador',fechaAprobacion:null,firmaPaciente:''};
+    var pr={id:Counters.take('nextPresupId'),fecha:c.fecha,validez:c.validez,observaciones:c.observaciones,items:c.items,descuento:c.descuento,subtotal:c.subtotal,total:c.total,estado:'borrador',fechaAprobacion:null,firmaPaciente:''};
     (p.presupuestos=p.presupuestos||[]).push(pr);save();return pr;
   }
   function linked(p,pr){                                   // tratamientos que nacieron de este presupuesto

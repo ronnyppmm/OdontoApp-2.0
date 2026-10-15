@@ -42,8 +42,11 @@ function audit(ev,det){try{if(window.Seguridad&&Seguridad._audit)Seguridad._audi
 /* ── almacenamiento local propio (no toca la base principal) ── */
 var _sdb=null;
 function sdb(){return new Promise(function(res,rej){if(_sdb)return res(_sdb);var rq=indexedDB.open('odontoapp_sync',1);rq.onupgradeneeded=function(e){e.target.result.createObjectStore('kv');};rq.onsuccess=function(e){_sdb=e.target.result;res(_sdb);};rq.onerror=function(){rej(rq.error);};});}
-function sdbGet(k){return sdb().then(function(db){return new Promise(function(res){var r=db.transaction('kv','readonly').objectStore('kv').get(k);r.onsuccess=function(){res(r.result);};r.onerror=function(){res(undefined);};});}).catch(function(){return undefined;});}
-function sdbPut(entries){return sdb().then(function(db){return new Promise(function(res,rej){var tx=db.transaction('kv','readwrite'),st=tx.objectStore('kv');entries.forEach(function(e){if(e[1]===undefined)st.delete(e[0]);else st.put(e[1],e[0]);});tx.oncomplete=function(){res(true);};tx.onerror=function(){rej(tx.error);};});});}
+function sdbGet(k){return sdb().then(function(db){return new Promise(function(res){var r=db.transaction('kv','readonly').objectStore('kv').get(k);r.onsuccess=function(){res(r.result);};r.onerror=function(){res(undefined);};});}).then(function(v){return Vault.isEnv(v)?Vault.open(v,'sdb|'+k):v;}).catch(function(){return undefined;});}
+function sdbPut(entries){
+  if(Vault.locked())return Promise.reject(new Error('Bóveda cerrada'));
+  return Promise.all(entries.map(function(e){return (Vault.sealing()&&e[1]!==undefined)?Vault.seal(e[1],'sdb|'+e[0]).then(function(v){return [e[0],v];}):[e[0],e[1]];})).then(function(es){
+  return sdb().then(function(db){return new Promise(function(res,rej){var tx=db.transaction('kv','readwrite'),st=tx.objectStore('kv');es.forEach(function(e){if(e[1]===undefined)st.delete(e[0]);else st.put(e[1],e[0]);});tx.oncomplete=function(){res(true);};tx.onerror=function(){rej(tx.error);};});});});}
 function sdbClear(){return sdb().then(function(db){return new Promise(function(res){var tx=db.transaction('kv','readwrite');tx.objectStore('kv').clear();tx.oncomplete=function(){res(true);};tx.onerror=function(){res(false);};});}).catch(function(){return false;});}
 function saveMeta(){return sdbPut([['meta',meta]]);}
 function newMeta(id){return {clinicId:id,cursor:null,recs:{},log:[],legacyDone:false,allowDeletes:false};}
@@ -99,7 +102,7 @@ function mergeRecord(kind,base,local,remote,noBase){
   var m=merge3(base,local,remote,ctx,'');
   if(kind==='config'&&isPlain(m)){
     var lc=(local&&local.counters)||{},rc=(remote&&remote.counters)||{},c=Object.assign({},m.counters||{});
-    ['nextId','nextEgId','nextFactId','nextRecetaId','nextPresupId'].forEach(function(k){var mx=Math.max(+lc[k]||0,+rc[k]||0,+c[k]||0);if(mx)c[k]=mx;});
+    Counters.KEYS.forEach(function(k){var mx=Math.max(+lc[k]||0,+rc[k]||0,+c[k]||0);if(mx)c[k]=mx;});
     m.counters=c;
     ctx.conflicts=ctx.conflicts.filter(function(x){return x.path.indexOf('.counters')!==0;});
   }
@@ -111,7 +114,7 @@ function txt(id){var e=document.getElementById(id);return e?e.textContent:'';}
 function configData(){
   return {clinica:{nombre:txt('logoText'),profesional:txt('logoProfesional'),ruc:clinicaRUC,direccion:clinicaDireccion,telefono:clinicaTelefono,logoColor:logoColor,logoImg:logoImg||''},
     meds:MEDICAMENTOS_COMUNES,
-    counters:{nextId:nextId,nextEgId:nextEgId,nextFactId:nextFactId,nextRecetaId:nextRecetaId,nextPresupId:nextPresupId}};
+    counters:Counters.all()};
 }
 function ensureKeys(){
   var changed=false,legacy=!meta.legacyDone;
@@ -171,9 +174,7 @@ function applyConfig(d){
     try{Logo.applyColor(logoColor);}catch(e){}
   }
   if(d.counters){
-    nextId=Math.max(+nextId||0,+d.counters.nextId||0)||nextId;nextEgId=Math.max(+nextEgId||0,+d.counters.nextEgId||0)||nextEgId;
-    nextFactId=Math.max(+nextFactId||0,+d.counters.nextFactId||0)||nextFactId;nextRecetaId=Math.max(+nextRecetaId||0,+d.counters.nextRecetaId||0)||nextRecetaId;
-    nextPresupId=Math.max(+nextPresupId||0,+d.counters.nextPresupId||0)||nextPresupId;
+    Counters.maxWith(d.counters);
   }
   if(Array.isArray(d.meds)&&d.meds.length)MEDICAMENTOS_COMUNES=d.meds;
 }

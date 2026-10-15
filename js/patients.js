@@ -27,7 +27,7 @@ const Patients=(function(){
   function okF(f){return typeof f==='number'&&isFinite(f)&&f>0&&f<MAXF&&Math.floor(f)===f;}
   function idNum(p){var n=Number(p.id);return isFinite(n)?n:Infinity;}
   function maxFicha(){var m=0;patients.forEach(function(p){if(p&&okF(p.ficha)&&p.ficha>m)m=p.ficha;});return m;}
-  function nextFicha(){var f=Math.max(Math.floor(+nextId||1),maxFicha()+1);nextId=f+1;return f;}
+  function nextFicha(){var f=Math.max(Counters.get('nextId'),maxFicha()+1);Counters.set('nextId',f+1);return f;}
   function assignFichas(){
     var list=patients.filter(function(p){return p&&typeof p==='object';}).sort(function(a,b){var x=idNum(a),y=idNum(b);return x!==y?(x<y?-1:1):(String(a.id)<String(b.id)?-1:1);});
     var used={},max=0,changed=0,pend=[];
@@ -35,10 +35,10 @@ const Patients=(function(){
     pend.forEach(function(p){
       var id=Number(p.id),f;
       if(okF(id)&&!used[id])f=id;
-      else{f=Math.max(max,Math.floor(+nextId||1)-1)+1;while(used[f])f++;}
+      else{f=Math.max(max,Counters.get('nextId')-1)+1;while(used[f])f++;}
       p.ficha=f;used[f]=1;if(f>max)max=f;changed++;
     });
-    if(max>=(+nextId||1))nextId=max+1;
+    Counters.raiseTo('nextId',max+1);
     return changed;
   }
   function fichaOf(p){return p&&okF(p.ficha)?p.ficha:null;}

@@ -169,7 +169,7 @@ srv.listen(0, async () => {
   E("document.getElementById('logoText').textContent='Clínica <script>x</script>';clinicaRUC='1<img src=x onerror=1>';clinicaDireccion='Dir <b>x</b>';clinicaTelefono='9<i>'");
   const rc2 = E('Finance.receiptHtml(Patients.all()[0].payments[0],Patients.all()[0])');
   check('SEGURIDAD: nombre, RUC, dirección y teléfono de la clínica también (antes iban sin escapar)', !/<script>x<\/script>/.test(rc2) && !/<img src=x onerror=1>/.test(rc2) && !/Dir <b>x/.test(rc2) && /Cl&iacute;nica|Clínica &lt;script&gt;/.test(rc2.replace('&#39;', "'")) && /Dir &lt;b&gt;/.test(rc2));
-  check('el comprobante ya no usa onclick: sus botones Imprimir/Cerrar se enlazan con un script propio', !/onclick=/.test(rc2) && /id="btnPrint"/.test(rc2) && /id="btnClose"/.test(rc2) && /addEventListener/.test(rc2));
+  check('el comprobante ya no usa onclick: sin scripts en línea; Imprimir/Cerrar se enlazan desde la app', !/onclick=/.test(rc2) && /id="btnPrint"/.test(rc2) && /id="btnClose"/.test(rc2) && !/<script/i.test(rc2));
   E("document.getElementById('logoText').textContent='Clínica Prueba';clinicaRUC='';clinicaDireccion='';clinicaTelefono=''");
 
   // ───────── 13. informes y descargas ─────────

@@ -227,7 +227,7 @@ var Settings=(function(){
   var $=function(id){return document.getElementById(id);};
 
   /* ── datos de la clínica ── */
-  function clinic(){return {nombre:$('logoText').textContent,profesional:$('logoProfesional').textContent,ruc:clinicaRUC,telefono:clinicaTelefono,direccion:clinicaDireccion,nextReceta:nextRecetaId,tz:String(getTzOffset())};}
+  function clinic(){return {nombre:$('logoText').textContent,profesional:$('logoProfesional').textContent,ruc:clinicaRUC,telefono:clinicaTelefono,direccion:clinicaDireccion,nextReceta:Counters.get('nextRecetaId'),tz:String(getTzOffset())};}
   function maxRecetaUsada(){var m=0;Patients.all().forEach(function(p){(p.recetas||[]).forEach(function(r){var n=Number(r&&r.id);if(n>m)m=n;});});return m;}
   function checkClinic(f){
     f=f||{};var warnings=[],sp=function(s){return String(s==null?'':s).replace(/\s+/g,' ').trim();};
@@ -242,7 +242,7 @@ var Settings=(function(){
     }
     if(tel.length>40)return {ok:false,error:'El teléfono es demasiado largo.'};
     if(dir.length>200)return {ok:false,error:'La dirección es demasiado larga (máximo 200 letras).'};
-    var rn=f.nextReceta===undefined||f.nextReceta===''||f.nextReceta===null?nextRecetaId:Number(f.nextReceta);
+    var rn=f.nextReceta===undefined||f.nextReceta===''||f.nextReceta===null?Counters.get('nextRecetaId'):Number(f.nextReceta);
     if(!Number.isInteger(rn)||rn<1||rn>999999999)return {ok:false,error:'El próximo N° de receta debe ser un número entero desde 1.'};
     var usada=maxRecetaUsada();
     if(rn<=usada)warnings.push('Ya existe la receta N° '+usada+': con el N° '+rn+' se repetirían números de receta.');
@@ -254,7 +254,7 @@ var Settings=(function(){
     var c=checkClinic(f);if(!c.ok)return c;var k=c.clean;
     $('logoText').textContent=k.nombre;
     if(k.profesional)$('logoProfesional').textContent=k.profesional;
-    clinicaRUC=k.ruc;clinicaTelefono=k.telefono;clinicaDireccion=k.direccion;nextRecetaId=k.nextReceta;
+    clinicaRUC=k.ruc;clinicaTelefono=k.telefono;clinicaDireccion=k.direccion;Counters.set('nextRecetaId',k.nextReceta);
     lsSet('oa3_tz',k.tz);
     save();Patients.renderList();
     return {ok:true,warnings:c.warnings};
@@ -321,7 +321,7 @@ var Settings=(function(){
     '<div class="form-row form-full"><div class="form-group"><label>Profesional a cargo</label><input id="cfg_lprof" value="'+esc($('logoProfesional').textContent)+'" placeholder="Dr. Nombre Apellido"></div></div>'+
     '<div class="form-row"><div class="form-group"><label>RUC</label><input id="cfg_ruc" value="'+esc(clinicaRUC)+'" placeholder="1712345678001"></div><div class="form-group"><label>Teléfono</label><input id="cfg_tel" value="'+esc(clinicaTelefono)+'" placeholder="02-234-5678"></div></div>'+
     '<div class="form-row form-full"><div class="form-group"><label>Dirección</label><input id="cfg_dir" value="'+esc(clinicaDireccion)+'" placeholder="Av. Principal 123, Quito"></div></div>'+
-    '<div class="form-row"><div class="form-group"><label>🔢 Próximo N° de receta</label><input id="cfg_recnum" type="number" min="1" value="'+esc(nextRecetaId)+'"><div style="font-size:10px;color:var(--text3);margin-top:3px">La próxima receta llevará este número y las siguientes continuarán la secuencia. Ej: si tu última receta física fue la 850, escribe 851.</div></div></div>'+
+    '<div class="form-row"><div class="form-group"><label>🔢 Próximo N° de receta</label><input id="cfg_recnum" type="number" min="1" value="'+esc(Counters.get('nextRecetaId'))+'"><div style="font-size:10px;color:var(--text3);margin-top:3px">La próxima receta llevará este número y las siguientes continuarán la secuencia. Ej: si tu última receta física fue la 850, escribe 851.</div></div></div>'+
     '<div class="form-row form-full"><div class="form-group"><label>🌐 Zona horaria</label><select id="cfg_tz" data-on-change="settings.tz">'+
     TZ.map(function(z){return '<option value="'+z[0]+'"'+(String(getTzOffset())===z[0]?' selected':'')+'>'+esc(z[1])+'</option>';}).join('')+'</select>'+
     '<div style="font-size:11px;color:var(--text3);margin-top:4px">Fecha/hora local actual: <strong id="cfg_localtime"></strong></div></div></div>'+

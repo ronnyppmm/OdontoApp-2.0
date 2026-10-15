@@ -12,9 +12,9 @@ const $=id=>document.getElementById(id);
 const b64e=u=>btoa(String.fromCharCode.apply(null,Array.from(u)));
 const b64d=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 const hasCrypto=()=>!!(window.crypto&&crypto.subtle&&crypto.getRandomValues);
-async function derive(secret,saltB64){
+async function derive(secret,saltB64,iter){
   const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),'PBKDF2',false,['deriveBits']);
-  return b64e(new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',salt:b64d(saltB64),iterations:ITER,hash:'SHA-256'},key,256)));
+  return b64e(new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',salt:b64d(saltB64),iterations:iter||ITER,hash:'SHA-256'},key,256)));
 }
 const newSalt=()=>b64e(crypto.getRandomValues(new Uint8Array(16)));
 function eq(a,b){if(a.length!==b.length)return false;let r=0;for(let i=0;i<a.length;i++)r|=a.charCodeAt(i)^b.charCodeAt(i);return r===0;}
@@ -31,6 +31,8 @@ function pinDebil(p){
   const seq='0123456789',rev='9876543210';return seq.includes(p)||rev.includes(p);
 }
 const pinValido=p=>/^\d{4,8}$/.test(p);
+const pinCifrado=p=>/^\d{6,8}$/.test(String(p));   // con el cifrado activo se exigen 6 a 8 dígitos (más dígitos = más difícil de adivinar por fuerza bruta)
+const MSG_PIN6='Con el cifrado activado el PIN debe tener de 6 a 8 dígitos.';
 /* Reglas de un PIN nuevo (sin pantalla): → {ok,error} */
 function validarPin(a,b){
   a=String(a==null?'':a);b=String(b==null?'':b);
@@ -50,21 +52,28 @@ function registrarFallo(){
 function limpiarFallos(){cfg.fails=0;cfg.lockUntil=0;saveCfg();}
 async function verificarPin(pin){
   if(segundosBloqueo()>0)return'locked';
-  if(await derive(pin,cfg.salt).then(h=>eq(h,cfg.hash))){limpiarFallos();return'ok';}
+  // con el cifrado activado, el PIN correcto es el que logra abrir la bóveda (no hay otra forma de comprobarlo sin dar una pista extra a quien tenga los archivos)
+  const bien=Vault.enabled()?await Vault.unlockPin(pin):await derive(pin,cfg.salt,cfg.iter).then(h=>eq(h,cfg.hash));
+  if(bien){limpiarFallos();return'ok';}
   registrarFallo();audit('PIN incorrecto','Intento '+cfg.fails+(segundosBloqueo()>0?' — acceso bloqueado temporalmente':''));
   return segundosBloqueo()>0?'locked':'bad';
 }
 async function verificarCodigo(code){
   if(segundosBloqueo()>0)return'locked';
-  if(await derive(normRec(code),cfg.recSalt).then(h=>eq(h,cfg.recHash))){limpiarFallos();return'ok';}
+  const bien=Vault.enabled()?await Vault.unlockRec(code):await derive(normRec(code),cfg.recSalt).then(h=>eq(h,cfg.recHash));
+  if(bien){limpiarFallos();return'ok';}
   registrarFallo();audit('Código de recuperación incorrecto','Intento '+cfg.fails);
   return segundosBloqueo()>0?'locked':'bad';
 }
-async function fijarPin(pin){
+async function fijarPin(pin,opts){
   // todo se calcula primero; solo si sale bien se reemplaza la configuración (antes un fallo a medias dejaba sal nueva con hash viejo = PIN inservible)
-  const salt=newSalt(),hash=await derive(pin,salt);
+  // opts.cifrar: activa la bóveda con este PIN. Si la bóveda ya existe, se re-envuelve con el PIN y el código nuevos (los datos no se tocan).
+  const cifra=!!(opts&&opts.cifrar)||Vault.enabled(),iter=cifra?Vault.ITER:ITER;
+  const salt=newSalt(),hash=await derive(pin,salt,iter);
   const code=genRecovery(),recSalt=newSalt(),recHash=await derive(normRec(code),recSalt);
-  cfg=Object.assign({autoMin:10,fails:0,lockUntil:0},cfg||{},{salt,hash,recSalt,recHash});
+  if(opts&&opts.cifrar)await Vault.create(pin,code);
+  else if(Vault.enabled())await Vault.rewrap(pin,code);
+  cfg=Object.assign({autoMin:10,fails:0,lockUntil:0},cfg||{},{salt,hash,iter,recSalt,recHash});
   saveCfg();return code;
 }
 
@@ -127,7 +136,7 @@ function buildLock(){
   const d=document.createElement('div');d.id='lockScreen';d.setAttribute('role','dialog');d.setAttribute('aria-modal','true');d.setAttribute('aria-label','Pantalla de bloqueo');
   d.innerHTML=`<div class="lock-box">
     <div class="lock-ico">🔒</div><div class="lock-title" id="lockClinic"></div>
-    <div class="lock-sub">Ingresa tu PIN para continuar</div>
+    <div class="lock-sub" id="lockSub">Ingresa tu PIN para continuar</div>
     <input id="lockPin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="PIN" aria-label="PIN" data-on-keydown="security.lockKey">
     <div class="lock-msg" id="lockMsg" role="alert"></div>
     <button class="btn-primary lock-btn" id="lockGo" data-action="security.enter">Entrar</button>
@@ -168,6 +177,7 @@ function bloquear(motivo){
   $('lockClinic').textContent=($('logoText')&&$('logoText').textContent)||'OdontoApp';
   $('lockScreen').style.display='flex';document.body.classList.add('app-locked');
   lockMsg('');$('lockForgotPanel').style.display='none';
+  $('lockSub').textContent=Vault.locked()?'Ingresa tu PIN para descifrar y abrir tus datos':'Ingresa tu PIN para continuar';
   clearTimeout(idleT);setTimeout(()=>{const i=$('lockPin');if(i)i.focus();},50);
   if(motivo)audit('Bloqueo',motivo);
 }
@@ -178,6 +188,7 @@ function desbloquear(via){
 async function restablecerConCodigo(){
   const code=$('lockRec').value,a=$('lockNew1').value,b=$('lockNew2').value;
   const vp=validarPin(a,b);if(!vp.ok)return lockMsg(vp.error);
+  if(Vault.enabled()&&!pinCifrado(a))return lockMsg(MSG_PIN6);
   const r=await verificarCodigo(code);
   if(r!=='ok')return lockMsg(r==='locked'?mensajeEstado('locked'):'Código de recuperación incorrecto.');
   const nuevo=await fijarPin(a);audit('PIN restablecido','Con código de recuperación');
@@ -244,6 +255,7 @@ const Seguridad={
     const a=$('sec_p1').value,b=$('sec_p2').value;
     if(!enabled())return secMsg('No hay un PIN activo.');
     const vp=validarPin(a,b);if(!vp.ok)return secMsg(vp.error);
+    if(Vault.enabled()&&!pinCifrado(a))return secMsg(MSG_PIN6);
     $('secGo').disabled=true;const r=await verificarPin($('sec_p0').value);
     if(r!=='ok'){$('secGo').disabled=false;return secMsg(r==='locked'?mensajeEstado('locked'):'El PIN actual es incorrecto.');}
     try{const code=await fijarPin(a);audit('PIN cambiado','');mostrarCodigo(code,'PIN cambiado. Este es tu NUEVO código de recuperación (el anterior ya no sirve).');}
@@ -251,9 +263,58 @@ const Seguridad={
   },
   abrirDesactivar(){modalPin('Desactivar PIN',`<p style="font-size:13px;color:var(--text2);margin-bottom:12px">La app quedará accesible sin PIN en este dispositivo.</p>`+campo('sec_p0','PIN actual'),'security.saveDisable','Desactivar');},
   async guardarDesactivar(){
+    if(Vault.enabled())return secMsg('Primero desactiva el cifrado de datos (más abajo en esta misma tarjeta).');
     $('secGo').disabled=true;const r=await verificarPin($('sec_p0').value);
     if(r!=='ok'){$('secGo').disabled=false;return secMsg(r==='locked'?mensajeEstado('locked'):'El PIN actual es incorrecto.');}
     audit('PIN desactivado','');cfg=null;localStorage.removeItem(KEY);clearTimeout(idleT);closeModal();renderConfigSiAbierta();actualizarBotonTopbar();
+  },
+  abrirCifrar(){
+    if(!enabled())return;
+    modalPin('🔐 Activar cifrado de datos',`<p style="font-size:13px;color:var(--text2);margin-bottom:10px">Pacientes, historias, imágenes, respaldos y registro se guardarán <b>cifrados</b> en este dispositivo y solo se abren con tu PIN.</p>
+      <ul style="font-size:12px;color:var(--text2);line-height:1.6;margin:0 0 12px 18px"><li>Necesitas un PIN de <b>6 a 8 dígitos</b> (si el tuyo es más corto, usa antes «Cambiar PIN»).</li><li>Se generará un código de recuperación NUEVO: <b>guárdalo</b>.</li><li>Sin el PIN ni el código, los datos de este dispositivo <b>no se pueden recuperar</b> (podrás restaurar desde un respaldo o la nube).</li><li>Haz un respaldo antes de empezar.</li></ul>`+campo('sec_p0','PIN actual'),'security.saveEncrypt','Cifrar mis datos');
+  },
+  async guardarCifrar(){
+    if(Vault.enabled())return secMsg('El cifrado ya está activo.');
+    const pin=$('sec_p0').value;
+    if(!pinCifrado(pin))return secMsg(MSG_PIN6+' Cierra esta ventana y usa «Cambiar PIN» primero.');
+    $('secGo').disabled=true;const r=await verificarPin(pin);
+    if(r!=='ok'){$('secGo').disabled=false;return secMsg(r==='locked'?mensajeEstado('locked'):'El PIN actual es incorrecto.');}
+    secMsg('Cifrando… no cierres esta ventana.');
+    let code=null;
+    try{
+      saveFlush();await new Promise(ok=>setTimeout(ok,60));
+      code=await fijarPin(pin,{cifrar:true});
+      await vaultReencode(true);
+      purgeMirror();save();
+      audit('Cifrado de datos activado','');
+      mostrarCodigo(code,'Cifrado activado. Este es tu NUEVO código de recuperación (el anterior ya no sirve). Sin el PIN ni este código, los datos de este dispositivo no se pueden recuperar.');
+    }catch(e){
+      console.error('Cifrado:',e);
+      try{Vault.pause(true);await vaultReencode(false);Vault.remove();const c2=await fijarPin(pin);audit('Cifrado de datos: no se pudo activar','');save();
+        mostrarCodigo(c2,'No se pudo activar el cifrado; tus datos siguen como estaban. Este es tu nuevo código de recuperación.');}
+      catch(e2){Vault.pause(false);if(code)mostrarCodigo(code,'El cifrado quedó activo pero con un aviso. Guarda este código de recuperación.');else{secMsg('No se pudo activar el cifrado.');const g=$('secGo');if(g)g.disabled=false;}}
+    }
+  },
+  abrirDescifrar(){
+    modalPin('Desactivar cifrado de datos',`<p style="font-size:13px;color:var(--text2);margin-bottom:12px">Los datos volverán a guardarse <b>sin cifrar</b> en este dispositivo. Tu PIN seguirá activo.</p>`+campo('sec_p0','PIN actual'),'security.saveDecrypt','Descifrar y desactivar');
+  },
+  async guardarDescifrar(){
+    if(!Vault.enabled())return secMsg('El cifrado no está activo.');
+    $('secGo').disabled=true;const r=await verificarPin($('sec_p0').value);
+    if(r!=='ok'){$('secGo').disabled=false;return secMsg(r==='locked'?mensajeEstado('locked'):'El PIN actual es incorrecto.');}
+    secMsg('Descifrando… no cierres esta ventana.');
+    try{
+      saveFlush();await new Promise(ok=>setTimeout(ok,60));
+      Vault.pause(true);                                 // desde aquí todo lo nuevo se guarda sin cifrar
+      await vaultReencode(false);
+      if(await vaultReencode(false)!==0)throw new Error('Quedaron registros cifrados');
+      Vault.remove();                                    // (síncrono: nada nuevo se cifra entre la comprobación y este paso)
+      save();saveFlush();
+      audit('Cifrado de datos desactivado','');closeModal();renderConfigSiAbierta();
+    }catch(e){
+      console.error('Descifrado:',e);Vault.pause(false);
+      secMsg('No se pudo descifrar todo; el cifrado sigue activo y tus datos están a salvo.');const g=$('secGo');if(g)g.disabled=false;
+    }
   },
   setAuto(min){if(!enabled())return;const m=parseInt(min)||0;if([0,5,10,30].indexOf(m)<0)return;cfg.autoMin=m;saveCfg();audit('Bloqueo automático',cfg.autoMin?cfg.autoMin+' min':'desactivado');reiniciarInactividad();},
   bloquear(){bloquear('Manual');},
@@ -283,9 +344,12 @@ const Seguridad={
         <button class="btn-sec" data-action="security.viewLog">Ver registro de actividad</button>
       </div>
       ${on?`<div class="form-group" style="max-width:260px"><label>Bloqueo automático por inactividad</label><select data-on-change="security.setAuto">${[5,10,30,0].map(sel).join('')}</select></div>`:''}
-      <div style="font-size:11px;color:var(--text3);margin-top:12px;line-height:1.5">El PIN impide el acceso casual a la pantalla. No cifra los datos guardados en el navegador: protege también el dispositivo (clave de Windows/teléfono) y haz respaldos.</div></div>`;
+      ${on?`<div style="border-top:1px solid var(--border);margin-top:14px;padding-top:12px">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:10px">${Vault.enabled()?'<b style="color:var(--green,#16a34a)">🔐 Datos cifrados</b> en este dispositivo (AES-256). Se descifran solo al ingresar tu PIN.':'<b style="color:var(--amber,#d97706)">🔓 Datos sin cifrar</b> en este dispositivo: quien copie los archivos del navegador podría leerlos.'}</div>
+        ${Vault.enabled()?'<button class="btn-sec" data-action="security.openDecrypt">Desactivar cifrado</button>':'<button class="btn-primary" data-action="security.openEncrypt">🔐 Activar cifrado de datos</button>'}</div>`:''}
+      <div style="font-size:11px;color:var(--text3);margin-top:12px;line-height:1.5">${Vault.enabled()?'El cifrado protege los archivos guardados en este dispositivo (usa un PIN de 6 a 8 dígitos; cuantos más, mejor). <b>No</b> cubre los respaldos que exportes ni la copia en la nube, y con la app abierta los datos están disponibles. Si pierdes el PIN y el código de recuperación, restaura desde un respaldo.':'El PIN impide el acceso casual a la pantalla, pero sin cifrado no protege los archivos del navegador. Activa el cifrado, usa la clave de tu equipo/teléfono y haz respaldos.'}</div></div>`;
   },
-  validarPin,_audit:audit,_limpiarNombres:limpiarNombres,_estado:()=>({locked,enabled:enabled(),cfg:cfg&&{autoMin:cfg.autoMin,fails:cfg.fails}}),_flush:flushAudit
+  validarPin,_audit:audit,_limpiarNombres:limpiarNombres,_estado:()=>({locked,enabled:enabled(),vault:Vault.enabled(),cfg:cfg&&{autoMin:cfg.autoMin,fails:cfg.fails}}),_flush:flushAudit
 };
 window.Seguridad=Seguridad;
 App.actions({
@@ -303,6 +367,10 @@ App.actions({
   'security.saveDisable':function(){Seguridad.guardarDesactivar();},
   'security.modalKey':function(c){if(c.event.key==='Enter'&&c.data.go)App.dispatch(c.data.go,c);},
   'security.setAuto':function(c){Seguridad.setAuto(c.value);},
+  'security.openEncrypt':function(){Seguridad.abrirCifrar();},
+  'security.saveEncrypt':function(){Seguridad.guardarCifrar();},
+  'security.openDecrypt':function(){Seguridad.abrirDescifrar();},
+  'security.saveDecrypt':function(){Seguridad.guardarDescifrar();},
   'security.viewLog':function(){Seguridad.verRegistro();},
   'security.downloadLog':function(){Seguridad.descargarRegistro();},
   'security.copyCode':function(){copiarCodigo();},

@@ -64,7 +64,7 @@ srv.listen(0, async () => {
       beforeParse(w) {
         w.indexedDB = new IDBFactory(); w.IDBKeyRange = IDBKeyRange; w.scrollTo = () => {}; w.alert = m => alerts.push(String(m));
         w.confirm = m => { asked.push(String(m)); return confirmSeq.length ? confirmSeq.shift() : confirmDefault; };
-        w.supabase = { createClient: () => S.client() };
+        Object.defineProperty(w, 'supabase', { get: () => ({ createClient: () => S.client() }), set() {}, configurable: true });   // el cliente real (js/vendor) no debe pisar al simulado
       } });
     await wait(1800); return dom.window;
   };

@@ -75,7 +75,7 @@ var Backup=(function(){
       clinica:{clinicaNombre:$('logoText').textContent,profesional:$('logoProfesional').textContent,ruc:clinicaRUC,direccion:clinicaDireccion,telefono:clinicaTelefono,logoColor:logoColor,logoImg:logoImg},
       totalPacientes:Patients.all().length,totalFacturas:Finance.invoices().length,totalEgresos:Finance.expenses().length,
       patients:Patients.all(),egresos:Finance.expenses(),facturas:Finance.invoices(),servicios:Services.list(),archivosContables:Finance.archives(),quickAppts:Appts.quick(),
-      meds:MEDICAMENTOS_COMUNES,nextId:nextId,nextEgId:nextEgId,nextFactId:nextFactId,nextRecetaId:nextRecetaId,nextPresupId:nextPresupId
+      meds:MEDICAMENTOS_COMUNES,...Counters.all()
     };
   }
 
@@ -85,7 +85,7 @@ var Backup=(function(){
   }
   function apply(d){
     Patients.setAll(d.patients);Finance.setExpenses(d.egresos);Finance.setInvoices(d.facturas);Services.setAll(d.servicios);Finance.setArchives(d.archivosContables);Appts.setQuick(d.quickAppts);
-    nextId=d.counters.nextId;nextEgId=d.counters.nextEgId;nextFactId=d.counters.nextFactId;nextRecetaId=d.counters.nextRecetaId;nextPresupId=d.counters.nextPresupId;
+    Counters.merge(d.counters);
     if(d.clinic){
       $('logoText').textContent=d.clinic.nombre;$('logoProfesional').textContent=d.clinic.profesional;
       clinicaRUC=d.clinic.ruc;clinicaDireccion=d.clinic.direccion;clinicaTelefono=d.clinic.telefono;

@@ -31,7 +31,8 @@ srv.listen(0, async () => {
   const idx = read('index.html'), tags = [...idx.matchAll(/<script src="(js\/[^"]+)"/g)].map(m => './' + m[1]);
   check('sw.js precachea TODOS los scripts de index.html (si falta uno, la app no abre sin internet)', tags.length >= 14 && tags.every(t => base.includes(t)), tags.filter(t => !base.includes(t)).join());
   check('…y todo lo que precachea existe en disco', base.every(b => b === './' || fs.existsSync(path.join(ROOT, b.replace(/^\.\//, '')))), base.filter(b => b !== './' && !fs.existsSync(path.join(ROOT, b.replace(/^\.\//, '')))).join());
-  check('el orden de scripts en index.html es core → app → … → main', tags[0] === './js/core.js' && tags[1] === './js/app.js' && tags[tags.length - 1] === './js/main.js', tags.join());
+  const own = tags.filter(t => !t.includes('/vendor/'));
+  check('el orden de scripts en index.html es (Supabase local) → vault → core → app → … → main', own[0] === './js/vault.js' && own[1] === './js/core.js' && own[2] === './js/app.js' && own[own.length - 1] === './js/main.js' && tags.indexOf(tags.find(t => t.includes('/vendor/'))) < tags.indexOf('./js/core.js'), tags.join());
   // 5. en el navegador
   const errs = [];
   const vc = new VirtualConsole(); vc.on('jsdomError', e => { if (!/supabase|jsdelivr|googleapis|gstatic|Not implemented|serviceWorker/i.test(e.message)) errs.push(e.message.slice(0, 200)); });
@@ -63,6 +64,43 @@ srv.listen(0, async () => {
     });
   }
   check('ningún texto visible contiene nombres de API («Services.list()», «Finance.expenses()»…)', raros.length === 0, raros.join(' | '));
+  // 5d. seguridad del navegador: CSP, sin scripts externos, Supabase local con huella
+  const crypto = require('crypto');
+  const idxH = read('index.html'), cspM = /<meta http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(idxH), csp = cspM ? cspM[1] : '';
+  const dir = n => ((new RegExp('(?:^|; )' + n + ' ([^;]*)')).exec(csp) || [, ''])[1];
+  check('index.html declara una política de seguridad de contenido (CSP)', !!cspM);
+  check('CSP: los scripts solo pueden venir de la propia app (sin unsafe-inline ni unsafe-eval)', /^'self'$/.test(dir('script-src').trim()) && !/unsafe/.test(dir('script-src')));
+  check('CSP: sin plugins, sin <base> ajeno y sin envío de formularios', dir('object-src') === "'none'" && dir('base-uri') === "'none'" && dir('form-action') === "'none'");
+  check('CSP: la conexión a internet solo se permite a Supabase', /^'self' https:\/\/\*\.supabase\.co wss:\/\/\*\.supabase\.co$/.test(dir('connect-src').trim()));
+  check('index.html no carga ningún script de internet', ![...idxH.matchAll(/<script[^>]*\ssrc="([^"]+)"/g)].some(m => /^(https?:)?\/\//.test(m[1])));
+  check('index.html no tiene scripts en línea', ![...idxH.matchAll(/<script(?![^>]*\ssrc=)[^>]*>/g)].length);
+  const sbTag = /<script src="(js\/vendor\/supabase-[\d.]+\.js)" integrity="sha384-([^"]+)"/.exec(idxH);
+  check('Supabase va con versión exacta, copia local y huella SHA-384 que coincide con el archivo', !!sbTag && crypto.createHash('sha384').update(fs.readFileSync(path.join(ROOT, sbTag[1]))).digest('base64') === sbTag[2], sbTag && sbTag[1]);
+  const conScript = fs.readdirSync(path.join(ROOT, 'js')).filter(x => x.endsWith('.js') && /<script/i.test(fs.readFileSync(path.join(ROOT, 'js', x), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')));
+  check('ningún módulo genera <script> en línea (los documentos de impresión se enlazan con wirePrint)', conScript.length === 0, conScript.join());
+  // 5e. contadores privados (Counters)
+  const CONT = ['nextId', 'nextEgId', 'nextFactId', 'nextRecetaId', 'nextPresupId'];
+  check('los 5 contadores (nextId, nextEgId…) NO son variables globales', CONT.every(n => E(`typeof ${n}`) === 'undefined' && !(n in w)), CONT.filter(n => E(`typeof ${n}`) !== 'undefined').join());
+  const sueltos = [];
+  for (const f of fs.readdirSync(path.join(ROOT, 'js')).filter(x => x.endsWith('.js'))) {
+    const src = fs.readFileSync(path.join(ROOT, 'js', f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
+    const re = /(^|[^.\w$'"`])(next(?:Id|EgId|FactId|RecetaId|PresupId))\b(?!\s*:)/g; let m; while ((m = re.exec(src))) sueltos.push(f + ':' + m[2]);
+  }
+  check('ningún módulo usa los contadores como variables sueltas (solo Counters.get/take/set…)', sueltos.length === 0, sueltos.join());
+  E("Counters.reset()");
+  check('Counters: arrancan en 1; take() devuelve el actual y avanza; get() no avanza', E("Counters.get('nextId')") === 1 && E("Counters.take('nextId')") === 1 && E("Counters.take('nextId')") === 2 && E("Counters.get('nextId')") === 3);
+  check('set() acepta enteros ≥ 1 y rechaza 0, negativos, decimales, texto, null y NaN (el valor no cambia)', E("Counters.set('nextEgId',7)") === true && ['0', '-3', '2.5', "'abc'", 'null', 'NaN', 'undefined', 'Infinity', '1e300'].every(v => E(`Counters.set('nextEgId',${v})`) === false) && E("Counters.get('nextEgId')") === 7);
+  check('set() acepta un número escrito como texto («12»)', E("Counters.set('nextEgId','12')") === true && E("Counters.get('nextEgId')") === 12);
+  check('raiseTo() solo sube; nunca baja', E("Counters.raiseTo('nextFactId',50)") === 50 && E("Counters.raiseTo('nextFactId',10)") === 50 && E("Counters.raiseTo('nextFactId','x')") === 50);
+  check('un contador desconocido da error claro (no crea variables nuevas)', E("(()=>{try{Counters.get('otro');return 'no'}catch(e){return /desconocido/.test(e.message)}})()") === true && E("(()=>{try{Counters.set('__proto__',5);return 'no'}catch(e){return true}})()") === true);
+  check('merge() fija solo los válidos; maxWith() sube al mayor; ambos ignoran basura', (E("Counters.reset();Counters.merge({nextId:9,nextEgId:'x',nextFactId:-1,nextRecetaId:4.5,nextPresupId:'6'})"), E("JSON.stringify(Counters.all())") === '{"nextId":9,"nextEgId":1,"nextFactId":1,"nextRecetaId":1,"nextPresupId":6}') && (E("Counters.maxWith({nextId:3,nextEgId:20,nextFactId:'z'});Counters.merge(null);Counters.maxWith('texto')"), E("JSON.stringify(Counters.all())") === '{"nextId":9,"nextEgId":20,"nextFactId":1,"nextRecetaId":1,"nextPresupId":6}'));
+  check('all() devuelve una copia: cambiarla no cambia los contadores; KEYS tampoco se altera desde fuera', E("const c=Counters.all();c.nextId=999;Counters.get('nextId')") === 9 && E("Counters.KEYS.push('x');Counters.KEYS.length") === 6 && E("Object.keys(Counters.all()).length") === 5);
+  E("Counters.merge({nextId:12,nextEgId:13,nextFactId:14,nextRecetaId:15,nextPresupId:16}); saveNow()"); await wait(300);
+  const guardado = await E("idbGet('state')");
+  check('los 5 contadores viajan en el estado guardado (con los mismos nombres de siempre)', CONT.every((n, i) => guardado[n] === 12 + i), JSON.stringify(CONT.map(n => guardado[n])));
+  check('…y en el paquete de sincronización y en la copia de seguridad', JSON.stringify(E("buildPayload().data.nextPresupId")) === '16' && E("Backup.snapshot().nextRecetaId") === 15, E("Backup.snapshot().nextRecetaId"));
+  w.confirm = () => true; E("factoryReset()"); await wait(400);
+  check('«Restablecer de fábrica» reinicia TODOS los contadores (antes dejaba el de presupuestos); solo avanzan los de los datos de ejemplo', E("JSON.stringify(Counters.all())") === '{"nextId":3,"nextEgId":4,"nextFactId":1,"nextRecetaId":1,"nextPresupId":1}', E("JSON.stringify(Counters.all())"));
   // 6. API de estado
   E("Patients.setAll([{id:1,name:'A'},{id:2,name:'B'}])");
   check('setAll reemplaza la lista y all() la devuelve', E('Patients.all().length') === 2 && E('Patients.all()[1].name') === 'B');

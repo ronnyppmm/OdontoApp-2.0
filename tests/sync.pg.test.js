@@ -136,8 +136,8 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   check('dos recetas con el mismo N° no se fusionan: se conservan las dos', P(A, 1001).recetas.filter(r => r.id === 50).length === 2 && P(B, 1001).recetas.filter(r => r.id === 50).length === 2);
 
   // ── 9. contadores ──
-  ev(A, 'nextRecetaId=100;saveNow()'); await sync(A); await sync(B);
-  check('el contador de recetas nunca retrocede (queda en el mayor)', ev(B, 'nextRecetaId') >= 100);
+  ev(A, "Counters.set('nextRecetaId',100);saveNow()"); await sync(A); await sync(B);
+  check('el contador de recetas nunca retrocede (queda en el mayor)', ev(B, "Counters.get('nextRecetaId')") >= 100);
 
   // ── 10. objeto abierto en pantalla no se pierde ──
   ev(B, "curPt=patients.find(p=>p.id===1001)"); ev(A, "patients.find(p=>p.id===1001).phone='0988888888';saveNow()"); await sync(A); await sync(B);
