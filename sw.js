@@ -1,5 +1,5 @@
 /* OdontoApp service worker — red primero, caché como respaldo offline */
-const CACHE='odontoapp-v24';
+const CACHE='odontoapp-v26';
 const BASE=['./','./index.html','./css/styles.css','./js/vendor/supabase-2.117.3.js','./js/vault.js','./js/core.js','./js/app.js','./js/balance.js','./js/ui.js','./js/backup.js','./js/patients.js','./js/chart.js','./js/agenda.js','./js/finance.js','./js/clinical.js','./js/recalls.js','./js/sync.js','./js/security.js','./js/main.js','./icon.svg'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(BASE)).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});

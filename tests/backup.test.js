@@ -138,6 +138,7 @@ srv.listen(0, async () => {
   E("window.__rows=Array.from({length:17},(_,i)=>({id:'r'+i}))"); alerts.length = 0;
   E("Backup.createCloud('  Antes   de la cirugía  ')"); await wait(400);
   const ins = E("window.__bk.ins[0]");
+  check('el punto de restauración se guarda con clinic_id (la tabla segura clinic_backups), no con el id antiguo', ins && ins.clinic_id === 'c1' && !('clinica_id' in ins) && E("Cloud.clinicUuid()") === '');
   check('crear punto de restauración guarda nota limpia y foto completa', ins && ins.nota === 'Antes de la cirugía' && ins.backup_data.patients.length === 1 && ins.size_bytes > 0 && /creado/.test(lastAlert()), JSON.stringify(ins).slice(0, 150));
   check('conserva solo los 15 más recientes (borra los 2 sobrantes)', JSON.stringify(E("window.__bk.del")) === '[["r15","r16"]]', JSON.stringify(E("window.__bk.del")));
   check('la nota se limita a 80 caracteres', E("Backup.checkNote('x'.repeat(200))").length === 80 && E("Backup.checkNote('')") === 'Respaldo manual');

@@ -536,6 +536,7 @@ function panelHtml(){
 var Cloud={
   checkConnect:checkConnect,connect:connect,disconnect:disconnect,
   open:function(){if(!sbUrl||!sbKey||!cfg.clinicUuid){Cloud.openSetup();return;}if(!sbClient)sbClient=makeClient();Cloud.openPanel();},
+  clinicUuid:function(){return cfg.clinicUuid||'';},
   openSetup:function(){openModal(setupHtml());},
   openPanel:function(){openModal(panelHtml());setStatus(state);},
   copySql:async function(){

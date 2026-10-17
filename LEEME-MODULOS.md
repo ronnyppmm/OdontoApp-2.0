@@ -177,3 +177,10 @@ También comprueba que el texto normal (con & ' " <) se vea bien, sin doble esca
 - `Counters.take('nextId')` para un paciente nuevo; el N.° de ficha usa `Counters.get/set/raiseTo` dentro de `Patients`.
 - **Bug corregido:** «Restablecer de fábrica» no reiniciaba el contador de presupuestos; ahora `Counters.reset()` reinicia los cinco (después avanzan solo los de los datos de ejemplo).
 - `arquitectura.test.js` (39 comprobaciones) vigila: ninguno es global, ningún módulo los usa como variable suelta, y el comportamiento de cada método.
+
+
+## 19. Historial de respaldos en la nube seguro (v26)
+- Antes usaba la tabla antigua `clinica_backups` (que `schema.sql` no creaba: error «Could not find the table…») y el id de texto de la clínica. Ahora usa **`clinic_backups`**, definida en `supabase/schema.sql` con RLS: solo los miembros de la clínica ven, crean y borran sus respaldos (borrar permite conservar los 15 más recientes); `anon` no tiene acceso y nadie puede editar un respaldo.
+- La clave es el **UUID de la clínica** de la conexión con cuenta (`Cloud.clinicUuid()`), no el «ID de clínica anterior».
+- Prueba del SQL en PostgreSQL real: `tests/pg/backups.sql` (aislamiento entre clínicas, anon bloqueado, esquema repetible). Prueba de la app: sección 7 de `tests/backup.test.js`.
+- Para activarlo: volver a pegar `supabase/schema.sql` en Supabase → SQL Editor → Run (es seguro repetirlo). Los respaldos del historial antiguo no se migran.

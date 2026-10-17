@@ -220,9 +220,11 @@ var Backup=(function(){
     exportFile();return true;
   }
 
-  /* ═══ 7. HISTORIAL EN LA NUBE (Supabase, tabla clinica_backups) ═══ */
+  /* ═══ 7. HISTORIAL EN LA NUBE (Supabase, tabla clinic_backups) ═══ */
   var cloudRows=[];
-  function cloudReady(){if(typeof sbClient==='undefined'||!sbClient||!sbClinicaId){alert('⚠️ Primero debes conectar Supabase.');return false;}return true;}
+  /* el id de la clínica en Supabase es el UUID de la conexión con cuenta (no el «ID de clínica anterior» de texto) */
+  function cloudId(){var u='';try{u=(typeof Cloud!=='undefined'&&Cloud.clinicUuid&&Cloud.clinicUuid())||'';}catch(e){}return u||(typeof sbClinicaId!=='undefined'?sbClinicaId:'');}
+  function cloudReady(){if(typeof sbClient==='undefined'||!sbClient||!cloudId()){alert('⚠️ Primero debes conectar Supabase.');return false;}return true;}
   function btnState(txt,dis){var b=$('btnCrearBackup');if(b){b.textContent=txt;b.disabled=!!dis;}}
   function checkNote(n){n=str(n==null?'Respaldo manual':n,80);return n||'Respaldo manual';}
   async function createCloud(nota){
@@ -231,7 +233,7 @@ var Backup=(function(){
     try{
       var bundle=snapshot(),sizeBytes=new Blob([JSON.stringify(bundle)]).size,version=new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
       btnState('⏳ Guardando...',true);
-      var r=await sbClient.from('clinica_backups').insert({clinica_id:sbClinicaId,version:version,nota:nota,backup_data:bundle,size_bytes:sizeBytes});
+      var r=await sbClient.from('clinic_backups').insert({clinic_id:cloudId(),version:version,nota:nota,backup_data:bundle,size_bytes:sizeBytes});
       if(r.error)throw r.error;
       await pruneCloud();
       try{localStorage.setItem('oa3_last_auto_backup',String(Date.now()));}catch(e){}
@@ -247,16 +249,16 @@ var Backup=(function(){
   }
   async function pruneCloud(){
     try{
-      var r=await sbClient.from('clinica_backups').select('id').eq('clinica_id',sbClinicaId).order('created_at',{ascending:false});
+      var r=await sbClient.from('clinic_backups').select('id').eq('clinic_id',cloudId()).order('created_at',{ascending:false});
       if(r.error)throw r.error;
-      if(r.data&&r.data.length>15){var del=r.data.slice(15).map(function(d){return d.id;});var d2=await sbClient.from('clinica_backups').delete().in('id',del);if(d2.error)console.warn('No se pudieron borrar respaldos antiguos:',d2.error);}
+      if(r.data&&r.data.length>15){var del=r.data.slice(15).map(function(d){return d.id;});var d2=await sbClient.from('clinic_backups').delete().in('id',del);if(d2.error)console.warn('No se pudieron borrar respaldos antiguos:',d2.error);}
     }catch(e){console.warn('No se pudo limpiar respaldos antiguos:',e);}
   }
   async function openHistory(){
     if(!cloudReady())return;
     openModal('<div class="modal-title">📜 Cargando historial...</div><div style="text-align:center;padding:40px"><div style="font-size:40px">⏳</div></div>');
     try{
-      var r=await sbClient.from('clinica_backups').select('id, version, nota, size_bytes, created_at').eq('clinica_id',sbClinicaId).order('created_at',{ascending:false});
+      var r=await sbClient.from('clinic_backups').select('id, version, nota, size_bytes, created_at').eq('clinic_id',cloudId()).order('created_at',{ascending:false});
       if(r.error)throw r.error;
       cloudRows=r.data||[];
       if(!cloudRows.length){
@@ -280,7 +282,7 @@ var Backup=(function(){
     if(!cloudReady())return {ok:false,error:'Sin nube.'};
     var row=cloudRows.filter(function(b){return String(b.id)===String(id);})[0]||{},fecha=row.created_at?fmtFecha(row.created_at):String(id);
     try{
-      var r=await sbClient.from('clinica_backups').select('backup_data').eq('id',id).single();
+      var r=await sbClient.from('clinic_backups').select('backup_data').eq('id',id).single();
       if(r.error||!r.data)throw new Error('No se encontró el respaldo');
       var n=normalize(r.data.backup_data);if(!n.ok)throw new Error('Ese respaldo está dañado: '+n.error);
       if(!confirm('⚠️ ¿Restaurar la versión del '+fecha+'?\n\nNota: '+(row.nota||'—')+'\nTiene '+n.summary.pacientes+' paciente(s).\n\nEsto REEMPLAZARÁ los datos actuales de este dispositivo ('+Patients.all().length+' paciente(s)). Antes se guarda una copia de lo actual para poder deshacerlo.'+cloudNote()+warnText(n.warnings)))return {ok:false,cancelled:true};

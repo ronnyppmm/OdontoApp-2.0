@@ -87,6 +87,30 @@ revoke all on public.clinics, public.clinic_members, public.sync_records from an
 grant  select on public.clinics, public.clinic_members to authenticated;
 grant  select, insert, update on public.sync_records to authenticated;
 
+-- ── Historial de respaldos en la nube (botón «Historial de Respaldos») ───────────────
+--  Cada fila es una «foto» completa de los datos. Solo los miembros de la clínica la ven, la crean o la borran
+--  (el borrado permite que la app conserve únicamente los 15 más recientes). Sin sesión = sin acceso.
+create table if not exists public.clinic_backups (
+  id          uuid primary key default gen_random_uuid(),
+  clinic_id   uuid not null references public.clinics(id) on delete cascade,
+  version     text not null,
+  nota        text,
+  size_bytes  integer not null default 0,
+  backup_data jsonb not null,
+  created_by  uuid default auth.uid(),
+  created_at  timestamptz not null default now()
+);
+create index if not exists clinic_backups_idx on public.clinic_backups (clinic_id, created_at desc);
+alter table public.clinic_backups enable row level security;
+drop policy if exists backups_select on public.clinic_backups;
+create policy backups_select on public.clinic_backups for select to authenticated using (public.is_clinic_member(clinic_id));
+drop policy if exists backups_insert on public.clinic_backups;
+create policy backups_insert on public.clinic_backups for insert to authenticated with check (public.is_clinic_member(clinic_id));
+drop policy if exists backups_delete on public.clinic_backups;
+create policy backups_delete on public.clinic_backups for delete to authenticated using (public.is_clinic_member(clinic_id));
+revoke all on public.clinic_backups from anon;
+grant select, insert, delete on public.clinic_backups to authenticated;
+
 -- ── Crear la clínica de tu cuenta (la app lo llama una sola vez) ────────────────────
 create or replace function public.create_clinic(p_name text default 'Mi clínica') returns uuid
 language plpgsql security definer set search_path = public as $$
